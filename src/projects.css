@@ -1,0 +1,15 @@
+.project-library { margin: 14px 0 22px; color: #c6d1c6; }
+.project-library > h2 { font-size: 13px; font-weight: 600; letter-spacing: 1.2px; margin: 0 0 10px; }
+.project-library .new-project-button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 42px; padding: 10px; margin-bottom: 15px; color: #192824; background: #e8bd75; border: 1px solid #e8bd75; border-radius: 5px; font-size: 12px; font-weight: 600; }
+.project-library .new-project-button:hover:not(:disabled) { background: #f2d39d; }
+.project-library > label { display: block; font-size: 13px; letter-spacing: 1.2px; margin-bottom: 7px; }
+.project-library select { width: 100%; min-height: 38px; background: #304436; color: #f1f0df; border: 1px solid #657360; border-radius: 4px; font-size: 12px; padding: 7px; }
+#project-save-status { font-size: 13px; line-height: 1.5; color: #bfd3a5; margin: 9px 0; }
+#project-save-status.save-error { color: #ffcb91; }
+.project-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.project-actions button { font-size: 13px; min-height: 34px; padding: 6px 8px; border: 1px solid #66765e; background: transparent; color: #e4e8d9; border-radius: 4px; }
+.project-actions button:hover:not(:disabled) { background: #3b4f3e; }
+.project-library > small { display: block; font-size: 13px; line-height: 1.6; margin-top: 9px; color: #a7b3a2; }
+.scene-save-badge { display: block; margin-top: 4px; font-size: 13px; color: #b9b6a6; }
+.scene-save-badge.is-rendered { color: #d4e9af; }
+@media (max-width: 650px) { .project-library { margin: 12px 0; } .project-actions button { min-height: 38px; } }

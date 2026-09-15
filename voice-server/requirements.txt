@@ -1,0 +1,7 @@
+# Tested with Python 3.12 on Windows 11 with an NVIDIA GPU (CUDA 12.4).
+# For a GPU, install torch first:  pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+chatterbox-tts==0.1.7
+torch==2.6.0
+torchaudio==2.6.0
+fastapi==0.136.1
+uvicorn[standard]==0.46.0

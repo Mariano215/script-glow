@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.cache/
+data/
+artifacts/
+.env
+*.log
+graphify-out/
+.playwright-mcp/
+voice-server/voices/
+voice-server/.venv/
+__pycache__/

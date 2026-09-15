@@ -1,0 +1,78 @@
+import { chromium } from 'playwright';
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
+
+await mkdir('artifacts', { recursive: true });
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+await page.route('**/api/casting/guess-genders', route => route.fulfill({ json: { guesses: route.request().postDataJSON().names.map(name => ({ name, gender: 'unknown' })) } }));
+const errors = []; page.on('pageerror', error => errors.push(error.message));
+const requests = []; page.on('request', req => { if (req.method() === 'POST' && req.url().endsWith('/api/render')) requests.push(req.postDataJSON()); });
+const source = 'CAST\nJORDAN - male\nPARTNER - female\nCHRIS - male\n\nACT I\nSCENE ONE\n\nPARTNER\nAre you ready to begin?\n\nJORDAN\n(quietly)\nYes. Let us take it from the top.\n\nSCENE II\n\nPARTNER\nGood. The stage is yours.\n\nCHRIS\nAre you ready to begin?';
+try {
+  await page.goto('http://127.0.0.1:3001');
+  await page.locator('#file-input').setInputFiles({ name: 'Casting.fountain', mimeType: 'text/plain', buffer: Buffer.from(source) });
+  await page.waitForFunction(() => document.querySelector('#my-role')?.textContent.includes('Chris') && document.querySelector('[data-cast="CHRIS"]')?.value);
+  await page.locator('#my-role').selectOption('JORDAN');
+  assert.equal(await page.locator('[data-cast="JORDAN"]').inputValue(), 'MyVoice');
+  assert.match(await page.locator('[data-cast="PARTNER"]').inputValue(), /Stock-(Mica|Amber)/);
+  assert.match(await page.locator('[data-cast="CHRIS"]').inputValue(), /Stock-(Ash|Granite)/);
+  assert.match(await page.locator('[data-gender="PARTNER"] option:checked').innerText(), /female/);
+  await page.locator('[data-cast="PARTNER"]').selectOption('Stock-Mica');
+  await page.locator('[data-action="scope-script"]').click();
+  assert.equal(await page.locator('.script-scene-heading').count(), 2);
+  const geometry = await page.locator('.script-page').evaluate(paper => {
+    const box = paper.getBoundingClientRect();
+    const dialogue = paper.querySelector('.dialogue');
+    const parenthetical = paper.querySelector('.parenthetical');
+    return { width: box.width, font: getComputedStyle(paper).fontFamily, size: getComputedStyle(paper).fontSize, cue: dialogue.querySelector('.character-label').getBoundingClientRect().left - box.left, dialogue: dialogue.getBoundingClientRect().left - box.left, parenthetical: parenthetical.getBoundingClientRect().left - box.left, parentheticalAfterCue: parenthetical.previousElementSibling?.classList.contains('character-label') };
+  });
+  assert.equal(geometry.width, 816);
+  assert.match(geometry.font, /Courier/);
+  assert.equal(geometry.size, '16px');
+  assert.ok(Math.abs(geometry.cue - 3.7 * 96) < 1);
+  assert.ok(Math.abs(geometry.dialogue - 2.5 * 96) < 1);
+  assert.ok(Math.abs(geometry.parenthetical - 3.1 * 96) < 1);
+  assert.ok(geometry.parentheticalAfterCue);
+  assert.match(await page.locator('[data-action="play"]').getAttribute('aria-label'), /Make audio and play full script/);
+  await page.locator('[data-action="play"]').click();
+  await page.waitForFunction(() => document.querySelector('audio').currentTime > 0.1 && !document.querySelector('audio').paused, { timeout: 180000 });
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].scope, 'script');
+  assert.equal(requests[0].scene.lines.filter(line => line.kind === 'dialogue').length, 4);
+  await page.locator('[data-action="play"]').click();
+  assert.equal(await page.locator('a[download]').count(), 2);
+  await page.screenshot({ path: 'artifacts/casting-screenplay-desktop.png', fullPage: true });
+  await page.locator('[data-action="scene"]').first().click();
+  assert.match(await page.locator('[data-action="play"]').getAttribute('aria-label'), /Make audio and play scene/);
+  await page.locator('[data-action="play"]').click();
+  await page.waitForFunction(() => document.querySelector('audio').currentTime > 0.1 && !document.querySelector('audio').paused);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].scope, undefined);
+  assert.equal(requests[1].scene.lines.filter(line => line.kind === 'dialogue').length, 2);
+  await page.locator('[data-action="play"]').click();
+  await page.reload();
+  await page.locator('a[download]').first().waitFor();
+  assert.equal(await page.locator('[data-cast="PARTNER"]').inputValue(), 'Stock-Mica');
+  await page.locator('[data-gender="PARTNER"]').selectOption('male');
+  assert.match(await page.locator('[data-cast="PARTNER"]').inputValue(), /Stock-(Ash|Granite)/);
+  assert.equal(await page.locator('a[download]').count(), 0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Only paper should scroll horizontally, not app');
+  assert.ok(await page.locator('.script-paper-scroll').evaluate(node => node.scrollWidth > node.clientWidth));
+  assert.ok(await page.locator('.cast-card').evaluate(node => node.getBoundingClientRect().width > 300), 'Mobile cast controls should use the full column');
+  await page.screenshot({ path: 'artifacts/casting-screenplay-mobile.png', fullPage: true });
+  // Existing projects created before gender matching are corrected on reload.
+  await page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem('script-glow:v1'));
+    delete saved.genders; delete saved.manualVoices;
+    saved.cast.PARTNER = 'Stock-Granite'; saved.cast.CHRIS = 'Stock-Mica';
+    localStorage.setItem('script-glow:v1', JSON.stringify(saved));
+  });
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('[data-cast="PARTNER"]')?.value === 'Stock-Amber' || document.querySelector('[data-cast="PARTNER"]')?.value === 'Stock-Mica');
+  assert.match(await page.locator('[data-cast="CHRIS"]').inputValue(), /Stock-(Ash|Granite)/);
+  assert.equal(await page.locator('[data-cast="JORDAN"]').inputValue(), 'MyVoice');
+  assert.deepEqual(errors, []);
+  console.log('PASS: gender-based casting/overrides; script and scene Render & play; restored audio; standard Courier/margins/parentheticals; responsive app with scrollable paper.');
+} finally { await browser.close(); }

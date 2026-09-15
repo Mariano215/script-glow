@@ -1,0 +1,308 @@
+/* US screenplay geometry; positions are measured from the physical page edge.
+ * https://www.finaldraft.com/blog/what-are-the-margins-for-a-screenplay
+ * https://www.finaldraft.com/learn/how-to-format-a-screenplay/
+ */
+.script-panel {
+  min-width: 0;
+  background: #e9e8e3;
+}
+
+.script-paper-scroll {
+  overflow: auto;
+  max-height: max(480px, calc(100vh - 330px));
+  padding: 24px;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: #b9bdb2 #e9e8e3;
+}
+
+.script-panel .script-page {
+  position: relative;
+  box-sizing: border-box;
+  width: 8.5in;
+  min-width: 8.5in;
+  min-height: 11in;
+  max-height: none;
+  overflow: visible;
+  margin: 0 auto;
+  padding: 1in 1in 1in 1.5in;
+  background: #fff;
+  color: #191919;
+  box-shadow: 0 2px 12px #19282414;
+  font: 400 12pt/1 'Courier New', Courier, monospace;
+  letter-spacing: 0;
+  text-align: left;
+}
+
+.script-page .script-meta {
+  position: absolute;
+  top: .5in;
+  left: 1.5in;
+  right: 1in;
+  display: flex;
+  justify-content: space-between;
+  gap: .25in;
+  color: #555;
+  font: inherit;
+  letter-spacing: 0;
+}
+
+.script-page .script-meta > :first-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.script-panel .script-page h2 {
+  margin: 24pt 0 12pt;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  break-after: avoid;
+}
+
+.script-panel .script-page .script-meta + h2 {
+  margin-top: 0;
+}
+.script-panel .script-page > .script-scene-heading:first-of-type { margin-top: 0; }
+
+.script-page .scene-rule,
+.script-page .end-scene {
+  display: none;
+}
+
+.script-page .direction,
+.script-page .dialogue,
+.script-page .dialogue.my-line,
+.script-page .dialogue.active {
+  position: relative;
+  margin: 0 0 12pt;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  scroll-margin-block: 36px;
+}
+
+.script-page .direction {
+  width: 6in;
+  white-space: pre-line;
+  orphans: 2;
+  widows: 2;
+}
+
+.script-page .dialogue,
+.script-page .dialogue.my-line,
+.script-page .dialogue.active {
+  width: 3.5in;
+  margin-left: 1in;
+  break-inside: avoid;
+}
+
+.script-page .character-label {
+  display: block;
+  margin: 0 0 0 1.2in;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  break-after: avoid;
+}
+
+.script-page .character-label > span {
+  display: none;
+}
+
+.script-page .dialogue p,
+.script-page .hidden-line {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: pre-line;
+  orphans: 2;
+  widows: 2;
+}
+
+.script-page .direction.parenthetical {
+  width: 2.5in;
+  margin-left: 1.6in;
+  margin-bottom: 0;
+  break-after: avoid;
+}
+
+.script-page .dialogue .parenthetical {
+  width: 2.5in;
+  margin-left: .6in;
+  margin-bottom: 0;
+}
+
+.script-page .my-line .character-label {
+  text-decoration: underline;
+  text-decoration-color: #8a9e7d;
+  text-underline-offset: 3px;
+}
+
+.script-page .dialogue.active::before,
+.script-page .direction.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -.18in;
+  width: 3px;
+  background: #849b66;
+}
+
+.script-page .hidden-line {
+  min-height: 36pt;
+}
+
+/* Playback decoration never changes the physical screenplay margins. */
+.script-page .dialogue.active > p:not(.parenthetical),
+.script-page .dialogue.active > .hidden-line,
+.script-page .direction.active,
+.script-panel .script-page .script-scene-heading.active {
+  background: #ffe4a3;
+  box-shadow: 0 0 0 3px #ffe4a3;
+}
+
+.script-page .dialogue.active.practice-turn > p:not(.parenthetical),
+.script-page .dialogue.active.practice-turn > .hidden-line {
+  background: #d5e9c9;
+  box-shadow: 0 0 0 3px #d5e9c9;
+}
+
+.reading-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 12px 18px;
+  background: #f9f9f3;
+  border-bottom: 1px solid #e1e3db;
+  font-size: 13px;
+  color: #495847;
+}
+.reading-controls label { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.reading-controls input { accent-color: #537342; }
+.reading-controls span { font-size: 13px; }
+.scene-picker { margin-bottom: 14px; min-width: 0; }
+.scene-picker label { display: block; font-size: 13px; margin-bottom: 7px; }
+.scene-picker select { width: 100%; min-width: 0; color: #f0ede1; background: #344238; border: 1px solid #71816f; border-radius: 5px; padding: 9px 5px; font-size: 12px; }
+.scene-picker small { display: block; font-size: 13px; line-height: 1.5; color: #b0bcb2; margin-top: 7px; }
+.sidebar .scenes { flex-shrink: 0; }
+
+@media (max-width: 650px) {
+  .scene-picker { margin-top: 24px; margin-bottom: 8px; }
+  .sidebar .scenes { margin-top: 10px; scrollbar-width: thin; }
+}
+
+.script-page .hidden-stroke {
+  height: 8pt;
+  margin: 3pt 0 4pt;
+  border-radius: 0;
+  background: #dce2d6;
+}
+
+.script-page .hidden-line small {
+  margin: 0;
+  color: #65715d;
+  font: 10pt/1.2 'Courier New', Courier, monospace;
+}
+
+.script-page .empty-copy {
+  padding: 0;
+  color: inherit;
+  font: inherit;
+}
+
+@media (max-width: 650px) {
+  .script-paper-scroll {
+    padding: 12px;
+    max-height: 590px;
+  }
+}
+
+@page {
+  size: letter;
+  margin: 1in 1in 1in 1.5in;
+}
+
+@media print {
+  html,
+  body,
+  .studio,
+  .main,
+  .workspace-grid,
+  .script-panel,
+  .script-paper-scroll {
+    display: block;
+    width: auto;
+    min-width: 0;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    background: #fff;
+    box-shadow: none;
+  }
+
+  .sidebar,
+  .topbar,
+  .page-heading,
+  .settings-panel,
+  .script-toolbar,
+  .reading-controls,
+  .script-footer,
+  .page-footer,
+  .player,
+  .notice,
+  .editor-dialog,
+  .script-page .script-meta {
+    display: none !important;
+  }
+
+  .script-panel .script-page {
+    width: 6in;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+    color: #000;
+  }
+
+  .script-page .my-line .character-label {
+    text-decoration: none;
+  }
+
+  .script-page .dialogue.active::before,
+  .script-page .direction.active::before {
+    display: none;
+  }
+
+  .script-page [data-line].active,
+  .script-page [data-line].active > p,
+  .script-page [data-line].active > .hidden-line {
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+}

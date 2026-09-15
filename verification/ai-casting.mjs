@@ -1,0 +1,121 @@
+import { chromium } from 'playwright';
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
+import { encodeWav } from '../server/audio.js';
+
+await mkdir('artifacts', { recursive: true });
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const voices = ['default', 'MyVoice', 'Stock-Amber', 'Stock-Mica', 'Stock-Quartz', 'Stock-Ash', 'Stock-Granite', 'Stock-Slate'];
+const source = 'CAST\nJORDAN (male)\nTAYLOR (female)\nSAM (male)\nSAM (female)\n\nSCENE 1\nJORDAN: Hello.\nDAVID: Ready.\nELIZABETH: Yes.\nALEX: Welcome.\nTAYLOR: Fine.\nSAM: Okay.';
+const errors = [];
+async function setup(sourceText, saved = {}) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  page.on('pageerror', error => errors.push(error.message));
+  await page.route('**/api/health', route => route.fulfill({ json: { tts: { ok: true } } }));
+  await page.route('**/api/voices', route => route.fulfill({ json: { voices } }));
+  await page.addInitScript(({ sourceText, saved }) => {
+    if (!localStorage.getItem('script-glow:v1')) localStorage.setItem('script-glow:v1', JSON.stringify({ source: sourceText, role: 'JORDAN', ...saved }));
+  }, { sourceText, saved });
+  return page;
+}
+const cast = (page, name) => page.locator(`[data-cast="${name}"]`);
+const waitDone = page => page.waitForFunction(() => !document.querySelector('#ai-casting-status')?.textContent.includes('is guessing'));
+try {
+  const page = await setup(source);
+  let pending;
+  await page.route('**/api/casting/guess-genders', route => { pending = route; });
+  await page.goto('http://127.0.0.1:3001');
+  await page.waitForFunction(() => document.querySelector('#ai-casting-status')?.textContent.includes('is guessing'));
+  assert.deepEqual(pending.request().postDataJSON().names, ['DAVID', 'ELIZABETH', 'ALEX']);
+  await cast(page, 'ELIZABETH').selectOption('Stock-Ash');
+  await page.locator('[data-gender="ALEX"]').selectOption('female');
+  await pending.fulfill({ json: { model: 'fixture', guesses: [{ name: 'DAVID', gender: 'male' }, { name: 'ELIZABETH', gender: 'female' }, { name: 'ALEX', gender: 'unknown' }] } });
+  await waitDone(page);
+  assert.equal(await cast(page, 'ELIZABETH').inputValue(), 'Stock-Ash', 'Pending AI preserves manual voice');
+  assert.equal(await page.locator('[data-gender="ALEX"]').inputValue(), 'female', 'Pending AI preserves manual gender');
+  assert.match(await page.locator('[data-gender="DAVID"] option:checked').innerText(), /AI name guess: male/);
+  assert.match(await page.locator('[data-gender="TAYLOR"] option:checked').innerText(), /From script: female/);
+  assert.match(await page.locator('[data-gender="SAM"] option:checked').innerText(), /From script: unspecified/);
+  assert.equal(await cast(page, 'JORDAN').inputValue(), 'MyVoice');
+  assert.ok(await cast(page, 'DAVID').locator('option[value="Stock-Ash"]').isDisabled());
+  assert.match(await cast(page, 'DAVID').locator('option[value="Stock-Ash"]').innerText(), /Assigned to Elizabeth/);
+  assert.ok(await cast(page, 'DAVID').locator('option[value="default"]').isDisabled(), 'actor alias is reserved');
+  assert.ok(!(await cast(page, 'ELIZABETH').locator('option:checked').isDisabled()));
+  await page.screenshot({ path: 'artifacts/ai-casting-desktop.png', fullPage: true });
+  let calls = 0;
+  await page.route('**/api/casting/guess-genders', route => { calls++; return route.fulfill({ status: 500, json: { error: 'Unexpected repeat' } }); });
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('[data-gender="DAVID"] option:checked')?.textContent.includes('AI name guess'));
+  assert.equal(calls, 0, 'Saved guesses survive refresh without inference');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: 'artifacts/ai-casting-mobile.png', fullPage: true });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.close();
+
+  const shared = await setup('SCENE 1\nJORDAN: Hi.\nDAVID: Hello.', { cast: { JORDAN: 'MyVoice', DAVID: 'default' }, manualVoices: { JORDAN: true, DAVID: true }, guesses: { JORDAN: 'male', DAVID: 'male' } });
+  await shared.goto('http://127.0.0.1:3001');
+  await shared.waitForFunction(() => document.querySelector('[data-cast="DAVID"]')?.value === 'default');
+  assert.equal(await shared.locator('.casting-conflict').count(), 2);
+  assert.ok(!(await cast(shared, 'DAVID').locator('option:checked').isDisabled()), 'Existing duplicated current selection remains enabled');
+  await cast(shared, 'DAVID').selectOption('Stock-Ash');
+  assert.equal(await shared.locator('.casting-conflict').count(), 0);
+  assert.ok(await cast(shared, 'JORDAN').locator('option[value="Stock-Ash"]').isDisabled());
+  await shared.close();
+
+  const malformed = await setup('CAST\nJORDAN (male)\nSCENE 1\nJORDAN: Hi.\nDAVID: Saved project.', { guesses: { DAVID: { toString: 'male' }, JORDAN: ['male'] } });
+  await malformed.route('**/api/casting/guess-genders', route => route.fulfill({ json: { guesses: [{ name: 'DAVID', gender: 'male' }] } }));
+  await malformed.goto('http://127.0.0.1:3001');
+  await malformed.waitForFunction(() => document.querySelector('[data-gender="DAVID"] option:checked')?.textContent.includes('AI name guess'));
+  assert.match(await malformed.locator('.script-page').innerText(), /Saved project/);
+  await malformed.close();
+
+  const stale = await setup('CAST\nJORDAN (male)\nSCENE 1\nJORDAN: Hi.\nDAVID: Hello.');
+  const requests = [];
+  let secondArrived;
+  const nextBatch = new Promise(resolve => { secondArrived = resolve; });
+  await stale.route('**/api/casting/guess-genders', route => { requests.push(route); if (requests.length === 2) secondArrived(); });
+  await stale.goto('http://127.0.0.1:3001');
+  await stale.waitForFunction(() => document.querySelector('#ai-casting-status')?.textContent.includes('is guessing'));
+  await stale.locator('#file-input').setInputFiles({ name: 'New.txt', mimeType: 'text/plain', buffer: Buffer.from('CAST\nJORDAN (male)\nSCENE 1\nJORDAN: Hi.\nELIZABETH: Welcome.') });
+  await cast(stale, 'ELIZABETH').waitFor();
+  await requests[0].fulfill({ json: { guesses: [{ name: 'DAVID', gender: 'male' }] } });
+  await nextBatch;
+  // The next request is issued only after the stale batch settles.
+  await stale.waitForFunction(() => document.querySelector('#ai-casting-status')?.textContent.includes('is guessing'));
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[1].request().postDataJSON().names, ['ELIZABETH']);
+  await requests[1].fulfill({ status: 503, json: { error: 'Local Ollama unavailable. Retry or choose voice types manually.' } });
+  await waitDone(stale);
+  assert.match(await stale.locator('#ai-casting-status').innerText(), /unavailable/);
+  assert.ok(await stale.locator('[data-action="guess-names"]').isEnabled());
+  assert.ok(await stale.locator('[data-action="render"]').isEnabled(), 'AI failure does not prevent rendering');
+  const stored = await stale.evaluate(() => JSON.parse(localStorage.getItem('script-glow:v1')));
+  assert.ok(!stored.guesses.DAVID, 'Stale result never enters new project');
+  await stale.close();
+
+  const deferred = await setup('CAST\nJORDAN (male)\nSCENE 1\nJORDAN: Hi.\nELIZABETH: Welcome.');
+  let aiAttempts = 0, delayed;
+  await deferred.route('**/api/casting/guess-genders', route => { aiAttempts++; if (aiAttempts === 1) return route.fulfill({ status: 503, json: { error: 'Offline; retry later.' } }); delayed = route; });
+  let input;
+  await deferred.route('**/api/render', route => { input = route.request().postDataJSON(); return route.fulfill({ status: 202, json: { jobId: 'ai-fixture' } }); });
+  await deferred.route('**/api/jobs/ai-fixture', route => route.fulfill({ json: { id: 'ai-fixture', status: 'complete', completed: 2, total: 2, result: { fullUrl: '/audio/ai-fixture-full.wav', practiceUrl: '/audio/ai-fixture-practice.wav', duration: 4, cues: input.scene.lines.filter(line => line.kind === 'dialogue').map((line, i) => ({ lineId: line.id, character: line.character, start: i * 2, end: i * 2 + 1 })) } } }));
+  await deferred.route('**/audio/ai-fixture-*.wav', route => route.fulfill({ contentType: 'audio/wav', body: encodeWav(Buffer.alloc(48000 * 4)) }));
+  await deferred.goto('http://127.0.0.1:3001');
+  await deferred.waitForFunction(() => document.querySelector('#ai-casting-status')?.textContent.includes('Offline'));
+  await deferred.locator('[data-action="render"]').click();
+  await deferred.locator('a[download]').first().waitFor();
+  const original = await cast(deferred, 'ELIZABETH').inputValue();
+  const desiredGender = original === 'Stock-Amber' || original === 'Stock-Mica' || original === 'Stock-Quartz' ? 'male' : 'female';
+  await deferred.locator('[data-action="guess-names"]').click();
+  await deferred.waitForFunction(() => document.querySelector('#ai-casting-status')?.textContent.includes('is guessing'));
+  await delayed.fulfill({ json: { guesses: [{ name: 'ELIZABETH', gender: desiredGender }] } });
+  await waitDone(deferred);
+  assert.equal(await cast(deferred, 'ELIZABETH').inputValue(), original);
+  assert.ok(await deferred.locator('a[download]').first().isVisible(), 'AI reply preserves rendered audio');
+  await deferred.locator('[data-action="apply-guesses"]').click();
+  assert.notEqual(await cast(deferred, 'ELIZABETH').inputValue(), original);
+  assert.equal(await deferred.locator('a[download]').count(), 0, 'Explicit application invalidates changed audio');
+  await deferred.close();
+  assert.deepEqual(errors, []);
+  console.log('AI casting verified: disabled ownership/aliases, manual/script priority, cache, stale replies, offline fallback, saved audio, mobile.');
+} finally { await browser.close(); }

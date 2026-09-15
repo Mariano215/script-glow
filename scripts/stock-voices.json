@@ -1,0 +1,12 @@
+{
+  "source": "https://github.com/n33kos/kokoro-voices",
+  "revision": "bbf160ee12f887b872d4f7f18ec0c29ce186086c",
+  "license": "CC0-1.0",
+  "licenseUrl": "https://github.com/n33kos/kokoro-voices/blob/bbf160ee12f887b872d4f7f18ec0c29ce186086c/LICENSE",
+  "voices": [
+    { "id": "Stock-Mica", "sample": "af_mica", "sha256": "4e5e9e3b9ff6a06160bf1bf65eac70f5083640c1920db566ada6fb2c92b9afd0", "seconds": 6.775 },
+    { "id": "Stock-Granite", "sample": "am_granite", "sha256": "c1f6cbb58196a070bba21c647d0ccbb84cbec875cece9447c25cad20a4df39e5", "seconds": 8.975 },
+    { "id": "Stock-Amber", "sample": "af_amber", "sha256": "1bf0a00bbd8b231dfefba589be281bb79f25110efc302a40d9b76a1ad1149244", "seconds": 6.35 },
+    { "id": "Stock-Ash", "sample": "am_ash", "sha256": "bc61e728e82a1494730290409e6fa3e1559978067600840bd5e9f83b1dac83a7", "seconds": 7.575 }
+  ]
+}

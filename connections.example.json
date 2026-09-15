@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "name": "My local services",
+  "chatterbox": { "url": "http://127.0.0.1:8095", "cacheNamespace": "my-chatterbox", "legacyCache": false },
+  "whisperx": { "url": "http://127.0.0.1:8010" },
+  "ollama": { "url": "http://127.0.0.1:11434", "model": "" },
+  "casting": { "preferredActorVoice": "", "aliases": {} }
+}

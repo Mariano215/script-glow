@@ -1,0 +1,77 @@
+/* Screen navigation and actor annotations; never change screenplay geometry. */
+[hidden] { display: none !important; }
+.topbar { position: sticky; top: 0; z-index: 15; gap: 20px; background: #f5f4ef; padding-top: 14px; padding-bottom: 14px; height: auto; min-height: 75px; }
+.studio-menu { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.studio-menu a { color: #53635b; padding: 11px 17px; border-radius: 7px; text-decoration: none; font-size: 14px; font-weight: 600; }
+.studio-menu a[aria-current="page"] { color: #fff; background: #294d40; }
+.studio-menu a span { font-size: 13px; opacity: .8; margin-left: 5px; }
+.topbar .breadcrumb { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar .private-pill { flex-shrink: 0; }
+.brand .brand-mark { object-fit: contain; background: #f7f2df; border-radius: 8px; padding: 3px; width: 42px; height: 42px; }
+.sidebar .brand { padding-left: 52px; }
+.cast-screen .cast-card { background: transparent; border: 0; padding: 0; }
+.cast-screen .cast-card > .card-heading { margin-bottom: 8px; }
+.cast-screen .cast-card > p { font-size: 13px; }
+.cast-screen .cast-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 18px; padding: 0; }
+.cast-screen .cast-row { display: flex; padding: 22px; gap: 14px; border: 1px solid #d9ded2; border-radius: 12px; background: #fffef9; margin: 0; align-items: flex-start; }
+.cast-screen .cast-row label { font-size: 17px; margin-bottom: 14px; display: block; }
+.cast-screen .cast-avatar { width: 38px; height: 38px; font-size: 16px; flex-shrink: 0; }
+.cast-screen .cast-row select { font-size: 13px; padding: 10px 6px; min-height: 42px; width: 100%; margin-bottom: 7px; border: 1px solid #d6ddd1; border-radius: 5px; }
+.cast-screen .casting-evidence, .cast-screen .casting-conflict, .cast-screen .voice-description { font-size: 12px; }
+.cast-screen .voice-actions button, .character-actions button { font-size: 12px; min-height: 40px; }
+.character-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.character-actions button { padding: 9px 10px; border: 1px solid #becbb3; border-radius: 5px; background: transparent; color: #344d3b; }
+.character-actions button[aria-pressed="true"] { background: #e8eee1; border-color: #536e44; }
+.cast-shortcut { display: block; margin-top: 18px; font-size: 12px; color: #355541; text-underline-offset: 4px; }
+.highlight-card { order: 2; }
+.highlight-card select { width: 100%; min-height: 40px; }
+.highlight-colors { display: grid; gap: 10px; margin-top: 17px; }
+.highlight-colors label { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.highlight-colors input { width: 40px; height: 32px; padding: 2px; border: 1px solid #bbc8b3; border-radius: 5px; background: #fff; cursor: pointer; }
+.highlight-card p { font-size: 13px; line-height: 1.6; margin-top: 14px; }
+.highlight-warning { color: #805213; }
+.script-page { --character-color: #60a5fa; --spoken-color: #f2b544; --character-tint: color-mix(in srgb, var(--character-color) 30%, #fffdf7); --spoken-tint: color-mix(in srgb, var(--spoken-color) 48%, #fffdf7); }
+.script-page .dialogue.character-highlight > .character-label,
+.script-page .dialogue.character-highlight > p,
+.script-page .dialogue.character-highlight > .hidden-line { background: var(--character-tint); box-shadow: 0 0 0 2px var(--character-tint); }
+.script-page .dialogue.active > p:not(.parenthetical),
+.script-page .dialogue.active > .hidden-line,
+.script-page .dialogue.active.practice-turn > p:not(.parenthetical),
+.script-page .dialogue.active.practice-turn > .hidden-line,
+.script-page .direction.active,
+.script-panel .script-page .script-scene-heading.active { background: var(--spoken-tint); box-shadow: 0 0 0 3px var(--spoken-tint); }
+.script-page .dialogue.active::before,
+.script-page .direction.active::before { background: #344b42; width: 4px; }
+.script-page .dialogue.active.practice-turn::before { background: transparent; border-left: 4px dashed #344b42; }
+:where(.studio-menu a, .character-actions button, .cast-shortcut, .highlight-card input, .highlight-card select):focus-visible { outline: 3px solid #b87721; outline-offset: 3px; }
+@media (max-width: 900px) { .topbar .private-pill { display: none; } }
+@media (max-width: 650px) {
+  .studio { padding-top: 64px; }
+  .topbar { position: fixed; left: 0; right: 0; top: 0; min-height: 64px; padding: 10px 18px; gap: 10px; z-index: 30; }
+  .studio-menu { flex: 1; min-width: 0; }
+  .studio-menu a { flex: 1; text-align: center; }
+  .topbar .breadcrumb { display: none; }
+  .help-button { margin-right: 0; padding: 6px 10px; }
+  .cast-screen .cast-row { padding: 16px; gap: 10px; }
+  .cast-screen .cast-row label { font-size: 16px; }
+  .brand .brand-mark { width: 32px; height: 32px; }
+  .sidebar .brand { padding-left: 42px; }
+}
+@media print {
+  .cast-screen, .studio-menu, .help-button { display: none !important; }
+  .workspace-grid[hidden] { display: block !important; }
+  .script-page [data-line].active, .script-page [data-line].active > p, .script-page [data-line].active > .hidden-line { background: transparent; box-shadow: none; }
+  .script-page .dialogue.character-highlight > .character-label, .script-page .dialogue.character-highlight > p, .script-page .dialogue.character-highlight > .hidden-line { background: var(--character-tint) !important; box-shadow: none !important; print-color-adjust: exact; }
+}
+.help-button { flex-shrink: 0; margin-right: 12px; background: #f9f9f4; border: 1px solid #d9dfd3; color: #53635b; border-radius: 20px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
+.help-button:hover { background: #ebeee4; }
+.help-dialog details { border-top: 1px solid #e1e3db; padding: 12px 0; }
+.help-dialog summary { font-weight: 600; font-size: 14px; }
+.help-dialog :is(ol, ul, dl, p) { font-size: 13px; line-height: 1.7; color: #3f4d44; margin: 10px 0 0; }
+.help-dialog dt { font-weight: 600; margin-top: 8px; }
+.help-dialog dd { margin: 2px 0 0 0; }
+.help-dialog code { background: #edf1e6; border-radius: 3px; padding: 1px 4px; font-size: 12px; }
+.voices-offline { align-items: flex-start; flex-wrap: wrap; }
+.voices-offline .notice-actions { display: flex; gap: 8px; }
+.voices-offline .notice-actions button { border: 1px solid currentColor; border-radius: 5px; padding: 6px 10px; font-weight: 600; }
+.sidebar .brand small { letter-spacing: 1px; }
