@@ -180,7 +180,11 @@ export function createApp({ cacheDir = path.join(ROOT, '.cache'), projectsDir = 
   app.get('/private-voice-preview.wav', async (req, res, next) => {
     if (!await hasPrivatePreview()) throw fail('Private voice preview is not configured.', 404);
     res.setHeader('Cache-Control', 'private, no-store');
-    res.type('audio/wav').sendFile('actor-preview.wav', { root: path.dirname(previewFile) }, error => { if (error) next(missing(error)); });
+    // Sent from memory (it is at most 30 seconds): a stream would hold the file open, and Windows
+    // then refuses to replace it when the voice is recorded again.
+    let wav;
+    try { wav = await readFile(previewFile); } catch (error) { return next(missing(error)); }
+    res.type('audio/wav').send(wav);
   });
   app.get('/api/projects', async (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json(await projects.list()); });
   app.post('/api/projects', async (req, res) => { const project = await projects.create(req.body); res.location(`/api/projects/${project.id}`).status(201).json(project); });

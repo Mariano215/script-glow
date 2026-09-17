@@ -53,7 +53,7 @@ export async function saveConnections(filename, value) {
 }
 // Windows refuses to replace a file that another program (antivirus, search indexer, a media
 // stream) holds open for a moment. Those errors pass, so the rename is tried again briefly.
-export async function renameRetry(from, to, tries = 8) {
+export async function renameRetry(from, to, tries = 12) {
   for (let attempt = 1; ; attempt++) {
     try { return await rename(from, to); }
     catch (error) {

@@ -124,6 +124,7 @@ test('your own voice is sent to Chatterbox, kept as your sample, chosen for your
     assert.equal((await loadConnections(file, true)).casting.preferredActorVoice, 'MyVoice', 'Your role now uses your voice');
     const sample = await fetch(`${base}/private-voice-preview.wav`);
     assert.equal(sample.status, 200, 'Your sample can be played back');
+    assert.equal(Buffer.from(await sample.arrayBuffer()).subarray(0, 4).toString(), 'RIFF');
     if (process.platform !== 'win32') assert.equal((await stat(path.join(temp, 'previews', 'actor-preview.wav'))).mode & 0o777, 0o600);
     // Recording again under the same name is allowed; taking a stock voice's name is not.
     assert.equal((await upload('MyVoice', tone(6))).status, 200);

@@ -40,5 +40,6 @@ jobs:
           python-version: '3.12'
       # The check uses a fake model, so the CPU build of torch is enough and Chatterbox is not needed.
       - run: pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
-      - run: pip install fastapi==0.136.1 "uvicorn[standard]==0.46.0" httpx
+      # soundfile is what torchaudio writes WAV with on Linux; Chatterbox brings it in a real install.
+      - run: pip install fastapi==0.136.1 "uvicorn[standard]==0.46.0" httpx soundfile numpy
       - run: python test_server.py
