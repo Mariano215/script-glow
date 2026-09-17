@@ -6,13 +6,22 @@ import { chromium } from 'playwright';
 import { createApp } from '../server/app.js';
 import { DEFAULT_CONNECTIONS } from '../server/connections.js';
 import { encodeWav } from '../server/audio.js';
+// This headless browser throttles page timers, so waiting is done by polling from Node.
+const until = async (target, check, arg, { timeout = 60000 } = {}) => {
+  const end = Date.now() + timeout;
+  while (!(await target.evaluate(check, arg))) {
+    if (Date.now() > end) throw new Error(`Timed out waiting for: ${String(check).slice(0, 160)}`);
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+};
+
 
 // Switching scenes while audio is being made must ask before cancelling. Isolated data, slow fake TTS.
 const temp = await mkdtemp(path.join(os.tmpdir(), 'script-glow-guard-'));
 const source = [1, 2].map(scene => `SCENE ${scene}\n\n${Array.from({ length: 6 }, (_, line) => `${line % 2 ? 'ANNA' : 'BEN'}: Scene ${scene}, line ${line + 1}.\n`).join('\n')}`).join('\n');
 const preferences = { source, name: 'Guard check', role: 'ANNA', cast: { ANNA: 'Stock-Mica', BEN: 'Stock-Ash' }, guesses: {}, genders: {}, manualVoices: { ANNA: true, BEN: true }, sceneId: 'scene-1', gap: 0, directions: false, hide: false, follow: true, loop: false, rate: 1, mode: 'full' };
 const wav = encodeWav(Buffer.alloc(4800, 8));
-const app = createApp({ cacheDir: path.join(temp, 'cache'), projectsDir: path.join(temp, 'projects'), previewDir: path.join(temp, 'previews'), connections: DEFAULT_CONNECTIONS, serviceFetch: async url => {
+const app = createApp({ cacheDir: path.join(temp, 'cache'), projectsDir: path.join(temp, 'projects'), previewDir: path.join(temp, 'previews'), connectionsFile: path.join(temp, 'connections.json'), secretsFile: path.join(temp, 'secrets.json'), connections: DEFAULT_CONNECTIONS, serviceFetch: async url => {
   if (url.endsWith('/health')) return Buffer.from('{}');
   if (url.endsWith('/v1/voices')) return Buffer.from(JSON.stringify(['Stock-Mica', 'Stock-Ash']));
   if (url.endsWith('/v1/tts')) { await new Promise(resolve => setTimeout(resolve, 400)); return wav; }
@@ -24,15 +33,15 @@ const base = `http://127.0.0.1:${server.address().port}`;
 let browser;
 try {
   assert.equal((await fetch(`${base}/api/projects`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ preferences }) })).status, 201);
-  browser = await chromium.launch({ channel: 'chrome', headless: true });
+  browser = await chromium.launch({ channel: 'chrome', headless: true }).catch(() => chromium.launch({ channel: 'chromium', headless: true }));
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const dialogs = [];
   let accept = false;
   page.on('dialog', dialog => { dialogs.push(dialog.message()); void (accept ? dialog.accept() : dialog.dismiss()); });
   await page.goto(`${base}/#rehearsal`);
-  await page.waitForFunction(() => !document.querySelector('[data-action="render"]')?.disabled);
+  await until(page, () => !document.querySelector('[data-action="render"]')?.disabled);
   await page.locator('[data-action="render"]').click();
-  await page.waitForFunction(() => /Making audio/.test(document.querySelector('#player-status')?.textContent || ''));
+  await until(page, () => /Making audio/.test(document.querySelector('#player-status')?.textContent || ''));
   const jobs = async () => page.evaluate(() => document.querySelector('#player-status')?.textContent || '');
 
   // Declining keeps the render running and the scene selected.
@@ -54,7 +63,7 @@ try {
   accept = true;
   await page.locator('[data-action="scene"][data-id="scene-2"]').click();
   assert.equal(dialogs.length, 3);
-  await page.waitForFunction(() => document.querySelector('[data-action="scene"].selected')?.dataset.id === 'scene-2');
+  await until(page, () => document.querySelector('[data-action="scene"].selected')?.dataset.id === 'scene-2');
   assert.doesNotMatch(await jobs(), /Making audio/);
   console.log('PASS: scene switches during audio ask first; declining keeps the job, accepting cancels it.');
 } finally {

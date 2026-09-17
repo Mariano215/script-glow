@@ -1,0 +1,58 @@
+export interface Cue { lineId: string; start: number; end: number; character: string }
+export interface RatePreferences { rate: number; mode: 'full' | 'practice'; role: string }
+export interface WaitPreferences { mode: 'full' | 'practice'; role: string; wait: boolean }
+
+// In practice mode the actor's own line is a baked silence. Playing the file faster
+// would shorten the space they have to speak in, so that span always runs at 1x.
+// Full cast reads their line aloud, so there it follows the chosen speed like any other line.
+export const cueRate = (preferences: RatePreferences, cueCharacter: string | undefined): number =>
+  preferences.mode === 'practice' && !!cueCharacter && cueCharacter === preferences.role ? 1 : preferences.rate;
+
+export const cueAt = (cues: Cue[] | undefined, at: number): Cue | undefined =>
+  cues?.find(cue => at >= cue.start && at < cue.end);
+
+// Previous goes back to the start of the cue that is already under way, and only to the
+// cue before it when the current one has barely begun. That is what a repeated press does
+// on any player, and it saves a second press when the actor wants this line again.
+export function stepCue(cues: Cue[] | undefined, at: number, direction: 1 | -1): number | null {
+  if (!cues?.length) return null;
+  if (direction === 1) return cues.find(cue => cue.start > at + 0.001)?.start ?? null;
+  const earlier = cues.filter(cue => cue.start < at - 0.25);
+  return earlier.length ? earlier[earlier.length - 1].start : at > 0.25 ? 0 : null;
+}
+
+// Wait only where the actor's line is silence. In full cast the app reads it aloud,
+// so there is nothing to wait for. A cue already resumed is not waited on twice.
+export const shouldWait = (preferences: WaitPreferences, cue: Cue | undefined, resumedLineId: string): boolean =>
+  !!cue && preferences.wait && preferences.mode === 'practice' && !!preferences.role
+  && cue.character === preferences.role && cue.lineId !== resumedLineId;
+
+// Keep every space and mark, drop the rest of each word. Enough to prompt a line, not to read it.
+export const firstLetters = (text: string): string => text.replace(/(\p{L})(\p{L}*)/gu, (_, first) => first);
+
+// A and B name lines, not seconds, so the range survives a re-render at a different length.
+export function loopRange(cues: Cue[] | undefined, a: string, b: string): { start: number; end: number } | null {
+  const from = cues?.find(cue => cue.lineId === a);
+  const to = cues?.find(cue => cue.lineId === b);
+  if (!from || !to) return null;
+  const [first, last] = from.start <= to.start ? [from, to] : [to, from];
+  return { start: first.start, end: last.end };
+}
+
+// Additive rehearsal: learn line one, repeat it, then lines one and two, and so on. The block
+// always starts at the beginning, because recalling from the top is the point of the method.
+// The block grows by one of the actor's own lines, taking the cues before it along; a scene where
+// the actor never speaks grows a line at a time instead.
+export const buildTargets = (cues: Cue[] | undefined, role: string): Cue[] => {
+  const all = cues ?? [];
+  const mine = role ? all.filter(cue => cue.character === role) : [];
+  return mine.length ? mine : all;
+};
+export const buildEnd = (targets: Cue[], step: number): number | null =>
+  targets.length ? targets[Math.min(Math.max(step, 0), targets.length - 1)].end : null;
+// One pass finished. Repeat the same block until the count is met, then take in one more line.
+export function buildNext(step: number, pass: number, repeats: number, total: number): { step: number; pass: number; done: boolean } {
+  if (pass < Math.max(1, repeats)) return { step, pass: pass + 1, done: false };
+  if (step + 1 < total) return { step: step + 1, pass: 1, done: false };
+  return { step, pass, done: true };
+}

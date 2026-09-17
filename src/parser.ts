@@ -144,3 +144,24 @@ One more cup. Then we go.
 
 MARCUS
 Then we go.`;
+
+// Script text is user data, so the name is escaped before it becomes a pattern.
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// "In this scene" means the character speaks, or a stage direction names them.
+// A mention inside someone else's dialogue is talk about them, not their presence.
+export function sceneIncludes(scene: Scene, role: string): boolean {
+  const name = role.trim();
+  if (!name) return false;
+  const named = new RegExp(`\\b${escapeRegExp(name)}\\b`, 'i');
+  return scene.lines.some(line => line.kind === 'dialogue' ? line.character === role : named.test(line.text));
+}
+
+// A parenthetical is a note to the actor, not a line. It stays on the page and is never spoken.
+// ponytail: one pass, so a nested "((x))" leaves an empty pair behind. Real scripts do not nest.
+export const spokenText = (text: string): string => text.replace(/\([^()]*\)/g, ' ').replace(/\s{2,}/g, ' ').replace(/\s+([,.!?;:])/g, '$1').trim();
+// The lines an engine should read: parenthetical notes are dropped, and so is any line that was
+// nothing but a note.
+export const spokenLines = (lines: ScriptLine[]): ScriptLine[] => lines
+  .filter(line => line.format !== 'parenthetical')
+  .map(line => line.kind === 'dialogue' ? { ...line, text: spokenText(line.text) } : line)
+  .filter(line => line.text.trim().length > 0);

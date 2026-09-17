@@ -11,12 +11,13 @@ Follow the README: Node.js 24, `npm install`, and the [voice server](voice-serve
 ```sh
 npm test                                   # unit and API tests
 npm run build                              # type check and build
-node verification/studio-workspace.mjs     # browser checks with fake voices, no GPU
-node verification/project-library.mjs
-node verification/render-guard.mjs
+npx playwright install chromium            # once
+node verification/browser.mjs              # browser checks with fake voices, no GPU
+node verification/settings.mjs
+node verification/self-tape.mjs
 ```
 
-The other scripts in `verification/` need a running app or a GPU. Say in your pull request which checks you ran.
+The README lists every browser check. Those that start their own app need only a build; the rest need a running app or a GPU. If you change `voice-server/`, run `python test_server.py` there too. Say in your pull request which checks you ran.
 
 ## Guidelines
 

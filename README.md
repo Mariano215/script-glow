@@ -9,16 +9,25 @@ Script Glow renders two tracks for any scene or the full script:
 - **Full cast**: every character speaks, so you learn the rhythm.
 - **Practice**: your lines become silence of the exact same length, so you speak them on cue.
 
-Everything runs on your own machine. Scripts and audio are not sent to a paid cloud API.
+By default everything runs on your own machine, and scripts and audio are not sent anywhere. No GPU? In **Settings** you can pick a hosted voice engine (OpenAI, Google Gemini or ElevenLabs) instead. Then the lines you voice are sent to that company, which charges for them.
+
+<p align="center"><img src="docs/media/readme-demo.gif" alt="Switching from the full-cast track to the practice track, where the actor's own lines fall silent" width="760"></p>
+
+<p align="center"><img src="docs/media/readme-selftape.gif" alt="Recording a self-tape: the actor on camera, the REC light on, and her lines beside the camera" width="720"></p>
+
+<p align="center"><strong><a href="https://youtu.be/z8HUXr_tyC0">Watch the 0.2.0 walkthrough</a></strong> · <a href="https://youtu.be/aoRAlPY04Is">0.1.0 walkthrough</a></p>
 
 ## Features
 
-- **Script import**: plain text, [Fountain](https://fountain.io), and text-based PDF. Scene headings, act breaks, characters, and dialogue are detected, and you can fix them in the built-in editor.
+- **Script import**: plain text, [Fountain](https://fountain.io), and text-based PDF. Scene headings, act breaks, characters, and dialogue are detected, and you can fix them in the built-in editor with a live parse preview.
 - **Screenplay view**: US Letter geometry, 12 pt Courier, standard dialogue and parenthetical indents.
-- **Casting**: a card for every character with voice type, voice choice, and preview. Defaults come from script descriptions and pronoun cues. A local LLM (Ollama) can suggest voice types when the script gives no cue. Voices already in use are greyed out.
-- **Rehearsal**: full script or single scene, adjustable pause between lines, optional stage directions, hide and reveal your lines, loop, and 0.75× to 1.5× speed.
+- **Casting**: a card for every character with voice type, voice choice, and preview. Defaults come from script descriptions and pronoun cues. Ollama (local) or a hosted engine you choose in Settings can suggest voice types when the script gives no cue. Voices already in use are greyed out.
+- **Rehearsal**: full script or single scene, adjustable pause between lines, optional stage directions, loop, and 0.75× to 1.5× speed.
+- **Practice tools**: hide and reveal your lines, listen only, first letters of hidden lines, wait for me on my line, build up line by line, and Repeat A/B looping of one exchange.
 - **Script marking**: separate highlight and playback colors for your role or any character. Marks stay visible in print.
-- **Project library**: many projects on disk, autosave, `.sgbackup` export and restore, and render reuse when inputs match.
+- **Self-tape**: record yourself on camera against the cast audio, with a count-in, a recording light, and the script beside or over the camera. Trim a take and make an MP4 for casting sites, with a check against Casting Networks, Eco Cast and Spotlight.
+- **Voice engines**: the included Chatterbox server (free and private, best with an NVIDIA GPU), or ElevenLabs, OpenAI, or Google Gemini as paid, hosted alternatives. Record your own voice for your role with Chatterbox.
+- **Project library**: many projects on disk, listed with edit dates, rename and delete, autosave, `.sgbackup` export and restore, and render reuse when inputs match.
 - **Downloads**: full-cast and practice WAV files.
 - **In-app guide**: press **? Help** in the top bar.
 
@@ -27,11 +36,14 @@ Everything runs on your own machine. Scripts and audio are not sent to a paid cl
 | Component | Required | Purpose |
 | --- | --- | --- |
 | [Node.js](https://nodejs.org) 24+ | Yes | Runs the app and API |
-| Voice server | Yes, for audio | Reads the script aloud. Use the included [voice server](voice-server/README.md) (Chatterbox, Python 3.12, NVIDIA GPU recommended), or any server with `GET /health`, `GET /v1/voices`, and `POST /v1/tts` (`{ "text", "voice" }` in, WAV out). |
-| [Ollama](https://ollama.com) | Optional | AI voice-type suggestions. Needs an installed model. |
+| Voice server or a hosted voice key | Yes, for audio | Reads the script aloud. Use the included [voice server](voice-server/README.md) (Chatterbox, Python 3.12, NVIDIA GPU recommended), or any server with `GET /health`, `GET /v1/voices`, and `POST /v1/tts` (`{ "text", "voice" }` in, WAV out). **Record my voice** also needs `PUT /v1/voices/<name>`. Or skip the server and use an OpenAI, Google Gemini or ElevenLabs API key. |
+| [Ollama](https://ollama.com) or a hosted AI key | Optional | AI voice-type suggestions from character names. Ollama needs an installed model; OpenAI, Claude, Gemini, Grok or OpenRouter need a key. |
 | WhisperX server | Optional | Health check and verification scripts only. |
+| [FFmpeg](https://ffmpeg.org) | Optional | Faster, exact trim-to-MP4 for self-tapes. Put `ffmpeg` on the PATH or set `SCRIPT_GLOW_FFMPEG` to the program. Without it, Chrome and Edge make the MP4 by playing the take once. `SCRIPT_GLOW_FFMPEG` must point at the program itself, not a `.cmd` or `.bat` file. |
 
-Windows is verified. Linux and macOS should work but are not tested.
+The tests run on Windows, Linux and macOS on every push. The app and the browser checks are used daily on Windows.
+
+Browsers: current Chrome and Edge do everything. Firefox and Safari rehearse and record takes (Firefox records WebM, Safari records MP4); to trim a take into an MP4 there, install FFmpeg.
 
 ## Install
 
@@ -43,21 +55,26 @@ npm install
 
 ## Set up voices
 
-Follow [voice-server/README.md](voice-server/README.md) to install the voice server and the free stock voices. Start it before Script Glow.
+Pick one:
+
+- **On your own machine (free, private, best with an NVIDIA GPU).** Follow [voice-server/README.md](voice-server/README.md) to install the voice server and the free stock voices. Start it before Script Glow. On a Mac it runs on the CPU, which works but is slow.
+- **Hosted (paid, any laptop).** Start Script Glow, open **Settings**, choose ElevenLabs, OpenAI or Google Gemini under **Who reads the other parts**, press **Add key** under **Keys for paid services**, paste your API key and press **Save key**. Then press **Test the key**, and **Save changes**. Each line is voiced once and kept, so rehearsing the same scene again costs nothing.
 
 ## Configure
 
-The defaults work with the included voice server on the same computer, so this step is optional. To change service addresses, copy the example profile and edit it:
+The defaults work with the included voice server on the same computer, so this step is optional. The **Settings** screen writes this profile for you, and its changes apply at once. To edit it by hand, copy the example profile:
 
 ```sh
-mkdir data
-cp connections.example.json data/connections.json
+node -e "require('fs').mkdirSync('data', { recursive: true })"
+cp connections.example.json data/connections.json      # Windows cmd: copy connections.example.json data\connections.json
 ```
 
 ```json
 {
   "version": 1,
   "name": "My local services",
+  "voice": { "engine": "chatterbox", "model": "" },
+  "names": { "engine": "ollama", "model": "" },
   "chatterbox": { "url": "http://127.0.0.1:8095", "cacheNamespace": "my-chatterbox", "legacyCache": false },
   "whisperx": { "url": "http://127.0.0.1:8010" },
   "ollama": { "url": "http://127.0.0.1:11434", "model": "" },
@@ -67,21 +84,38 @@ cp connections.example.json data/connections.json
 
 | Field | Meaning |
 | --- | --- |
+| `voice.engine` | `chatterbox` (local), or `openai`, `gemini`, `elevenlabs` (hosted, needs a key). Optional; missing means `chatterbox`. |
+| `voice.model` | Hosted model name. Empty uses the recommended one. |
+| `names.engine` | Who guesses voice types from character names: `ollama` (local, uses `ollama.model`), or `openai`, `anthropic`, `gemini`, `xai`, `openrouter` (hosted, needs a key; only the names are sent). Optional; missing means `ollama`. |
+| `names.model` | Hosted model name for name guesses. Empty uses the recommended one. |
 | `chatterbox.url` | Base URL of the TTS server. |
 | `chatterbox.cacheNamespace` | Keeps the line cache separate for each voice server. |
 | `whisperx.url` | Base URL of the optional WhisperX server. |
 | `ollama.url`, `ollama.model` | Ollama server and an installed model name. An empty model turns AI suggestions off. |
-| `casting.preferredActorVoice` | Optional voice ID for your own cloned voice. It is used for your role when available. |
+| `casting.preferredActorVoice` | Voice ID of your own cloned voice, used for your role when available. **Record my voice** in Settings sets it for you. |
 | `casting.aliases` | Maps other voice IDs to one canonical ID. |
 
 Rules:
 
 - `data/connections.json` is gitignored. Without it, the app uses loopback defaults.
-- To use a file somewhere else, set `SCRIPT_GLOW_CONFIG=/path/to/profile.json`.
+- To use a file somewhere else, set `SCRIPT_GLOW_CONFIG=/path/to/profile.json`. Settings are saved back to that file.
 - URLs must be HTTP(S) and cannot contain credentials, a query string, or a fragment. Do not put API keys in the profile. Invalid profiles stop startup with an error.
-- A private preview of your own voice can go in `data/voice-previews/actor-preview.wav`.
+- **Record my voice** keeps a private copy of your recording in `data/voice-previews/actor-preview.wav`. You can also put a WAV there by hand.
 
-Restart the app after you change the profile. See [docs/connections.md](docs/connections.md) for the details.
+Restart the app after you edit the file by hand. See [docs/connections.md](docs/connections.md) for the details.
+
+Environment variables:
+
+| Variable | Meaning |
+| --- | --- |
+| `PORT` | App port (default `3001`). A second copy on another port still shares `data/` and `.cache/`. |
+| `SCRIPT_GLOW_CONFIG` | Path of the connection profile (default `data/connections.json`). |
+| `SCRIPT_GLOW_SECRETS` | Path of the key file (default in your user settings folder, see below). |
+| `SCRIPT_GLOW_FFMPEG` | Path of the FFmpeg program, when it is not on the PATH. |
+
+### A voice server on another computer
+
+If the voice server runs on another machine (for example a desktop with a GPU), start it with `VOICE_HOST`, `VOICE_ALLOWED_HOSTS` and `VOICE_TOKEN` as described in [voice-server/README.md](voice-server/README.md). In Script Glow, set the Chatterbox server address in **Settings > Advanced**, and add the same token under **Keys for paid services > Voice server token**.
 
 ## Run
 
@@ -104,12 +138,12 @@ Open http://127.0.0.1:3001.
 
 ## How to rehearse
 
-1. Click **New project** and import a script, or use the included sample.
+1. Open **Projects** and click **New project from a script**, or use the included sample.
 2. Click **Edit script** to check the parsed scenes and characters.
 3. Open **Cast**. Click **I'm playing this role** on your character. Pick and preview a voice for every other character.
 4. Open **Rehearsal**. Choose **Full script** or one scene and press **Play**. The first render is slower while Chatterbox loads its model.
-5. Listen in **Full cast**, then switch to **Practice** and speak your lines in the gaps.
-6. Download either WAV to rehearse away from the app.
+5. Listen in **Full cast**, then switch to **Practice** and speak your lines in the gaps. Hide my lines, Listen only, first letters, wait for me, build up line by line, and Repeat A/B all help you learn a scene.
+6. Download either WAV to rehearse away from the app, or open **Self-tape** to record yourself against the cast, trim the take, and make an MP4 for casting sites.
 
 Changes to the script, cast, your role, pause length, or stage directions need new audio. Speed and highlight colors do not. Scene labels show **Audio ready** or **Audio not made yet**.
 
@@ -124,23 +158,25 @@ Changes to the script, cast, your role, pause length, or stage directions need n
 
 | Location | Contents | Git |
 | --- | --- | --- |
-| `data/projects/` | Projects, manifests, and saved render WAVs | Ignored |
+| `data/projects/` | Projects, manifests, saved render WAVs, and self-tape takes | Ignored |
+| `data/projects/.trash/` | Deleted projects, kept until moved back by hand | Ignored |
 | `data/connections.json` | Your connection profile | Ignored |
+| `data/voice-previews/` | Your own voice sample, if you recorded one | Ignored |
+| `~/.config/script-glow/secrets.json` (or `%APPDATA%\script-glow\secrets.json`) | Hosted service API keys | Not in this repo |
 | `.cache/` | Line audio cache (512 MiB) and export cache (1 GiB), oldest files removed first | Ignored |
 | `artifacts/` | Verification output | Ignored |
 
 - Settings autosave. Wait for **Saved locally**. Script text needs **Save script** in the editor.
-- **Export backup** writes a `.sgbackup` with the script, cast, settings, and audio. **Restore backup** always creates a new project.
-- Limits: 1,000 projects and 4 GiB per backup. Each project keeps its 200 newest audio versions. Older versions and their WAV files are removed automatically, because the audio can always be made again.
+- Projects are listed with their last edited date. Rename the open project by editing its name; **Delete** moves a project's script, audio, and takes to `data/projects/.trash`, where they can be moved back by hand.
+- **Export backup** writes a `.sgbackup` with the script, cast, settings, and scene audio, not your self-tapes or your keys. **Restore backup** always creates a new project.
+- Limits: 1,000 projects and 4 GiB per backup. Each project keeps its 200 newest audio versions, and up to 50 self-tape takes at 512 MiB each. Older audio versions and their WAV files are removed automatically, because the audio can always be made again.
 - Render limits: full script up to 5,000 lines, 500,000 characters, and 2 hours of audio. One scene up to 300 lines, 60,000 characters, and 30 minutes. One speech can be up to 20,000 characters; long speeches are split into sentences for the voice service and joined back together.
-- There is no delete-project button yet.
+- A self-tape stops itself after 5 minutes; a slate recorded on its own stops after 1 minute.
 - Keep backups on a different drive.
-
-More detail: [docs/project-library.md](docs/project-library.md).
 
 ## Security
 
-Script Glow is a single-user local app with no authentication. The server listens on `127.0.0.1` only and checks the `Host` and `Origin` headers. Do not expose it to a network. Imported scripts and backups are treated as untrusted input: size limits apply, text is escaped before rendering, and PDFs are parsed in a separate process with memory and time limits.
+Script Glow is a single-user local app with no login. The server listens on `127.0.0.1` only, checks the `Host` and `Origin` headers, refuses to be shown inside another page, and accepts changes from the browser only with a secret made new at each launch. Do not expose it to a network. API keys for hosted services are kept in your user settings folder (`~/.config/script-glow/secrets.json`, or `%APPDATA%\script-glow\secrets.json` on Windows; set `SCRIPT_GLOW_SECRETS` to move it), with owner-only access, never in `data/connections.json`, never in a project backup, and never sent back to the browser once saved. If you choose a hosted voice engine (ElevenLabs, OpenAI, or Google Gemini), the lines of the scene you voice are sent to that company each time you make new audio; lines already made are cached and never sent again. If you choose a hosted engine for name guessing (OpenAI, Claude, Gemini, Grok, or OpenRouter), only the character names are sent. Your script file, your settings, and your self-tapes are never sent to either kind of service. With Chatterbox and Ollama on this computer, nothing leaves the machine. When they run on another computer, the lines, names and your voice recording go to that computer; protect a remote voice server with `VOICE_TOKEN`. On Windows, file permissions come from the folder: the key file is private in your user folder, while `data/` has the permissions of the folder you cloned into. See [SECURITY.md](SECURITY.md). Imported scripts and backups are treated as untrusted input: size limits apply, text is escaped before rendering, and PDFs are parsed in a separate process with memory and time limits.
 
 ## HTTP API
 
@@ -148,17 +184,31 @@ The UI uses these local endpoints. They are internal and can change.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| GET | `/api/session` | This launch's session token, used to authorize writes from the page |
 | GET | `/api/health` | Status of the voice and transcription services |
 | GET | `/api/connections` | Effective non-secret connection settings |
-| GET | `/api/voices` | Voice IDs from Chatterbox |
+| PUT | `/api/connections` | Save the connection profile (voice engine, name-guessing engine, server addresses) |
+| POST | `/api/connections/test` | Check one configured service and report whether it answers |
+| GET | `/api/secrets` | Which hosted providers have a key, with a short hint. Never the key |
+| PUT, DELETE | `/api/secrets/:provider` | Store or remove one provider's key |
+| GET | `/api/tools` | Whether FFmpeg is available |
+| GET | `/api/projects/:id/takes` | List self-tape takes for a project |
+| POST | `/api/projects/:id/takes` | Save a recorded take (`video/webm` or `video/mp4`) |
+| GET | `/api/projects/:id/takes/:file` | Play or download a take |
+| PATCH | `/api/projects/:id/takes/:file` | Rename a take |
+| DELETE | `/api/projects/:id/takes/:file` | Delete a take |
+| POST | `/api/projects/:id/takes/:file/mp4` | Trim a take (`{ start, end }` in seconds) and save an MP4 beside it |
+| GET | `/api/voices` | Voice IDs from the chosen engine, with labels and genders for hosted voices |
+| GET | `/api/voices/preview?voice=&session=` | A short sample of a hosted voice, made once and cached |
 | POST | `/api/import` | Extract text from an uploaded PDF (10 MB max) |
+| POST | `/api/voices/mine?name=` | Send a recording of your own voice (`audio/wav`, 5 to 30 s) to Chatterbox and use it for your role |
 | POST | `/api/casting/guess-genders` | AI voice-type suggestions for character names |
 | POST | `/api/render` | Start a render job |
 | GET | `/api/jobs/:id` | Render job progress and result |
 | POST | `/api/jobs/:id/cancel` | Cancel a render job |
 | GET | `/audio/:filename` | Cached render audio |
 | GET, POST | `/api/projects` | List or create projects |
-| GET, PUT | `/api/projects/:id` | Read or save a project |
+| GET, PUT, DELETE | `/api/projects/:id` | Read, save, or delete a project (delete moves it to `data/projects/.trash`) |
 | POST | `/api/projects/:id/renders` | Save a finished render to the project |
 | GET | `/api/projects/:id/audio/:filename` | Saved project audio |
 | GET | `/api/projects/:id/backup`, `/backup-info` | Download a backup, or list the audio it will contain |
@@ -172,19 +222,22 @@ npm test          # unit and API tests (node:test)
 npm run build     # type check and production build
 ```
 
-Browser checks with their own isolated server and fake voices (no GPU, no real data):
+Browser checks start their own throwaway app with fake voices (no GPU, no real data). They need a build and a browser:
 
 ```sh
-node verification/studio-workspace.mjs
-node verification/project-library.mjs
-node verification/render-guard.mjs
+npm run build
+npx playwright install chromium
+node verification/browser.mjs              # also: ai-casting, casting-playback, finish-tape,
+                                           # highlighting-scenes, numbered-scenes, own-voice,
+                                           # practice-controls, project-library, render-guard,
+                                           # self-tape, settings, studio-workspace, voice-library
 ```
 
-Checks against a running app (GPU checks need the voice server and should run one at a time):
+Checks against a running app on port 3001 (`npm start` first; GPU checks need the voice server and should run one at a time):
 
 ```sh
-node verification/browser.mjs
 node verification/pdf-import.mjs
+node verification/sidebar-order.mjs
 node verification/live-render.mjs          # renders a short scene, checks silence and timing
 node verification/transcribe-render.mjs    # optional: checks words with WhisperX
 node verification/voice-auditions.mjs      # optional: audition clips for stock voices
@@ -195,28 +248,21 @@ Service scripts read the URLs from your connection profile. Output goes to `arti
 ### Project layout
 
 ```
-server/        Express API: rendering, projects, PDF import, casting AI, connection profile
+server/        Express API: rendering, projects, takes, PDF import, casting AI, hosted services, keys, FFmpeg, connection profile
 voice-server/  Optional Chatterbox voice server (Python)
-src/           Vite + TypeScript UI: parser, casting, highlights, help, styles
+src/           Vite + TypeScript UI: parser, casting, playback, self-tape, highlights, help, styles
 tests/         node:test suites
 verification/  Browser (Playwright) and live-service checks
 scripts/       Voice reference installers and manifests
 public/        Logo, bundled fonts, voice preview clips
-docs/          Design notes and feature write-ups
+docs/          User guides and README media
 ```
 
 ### Documentation
 
-- [Design and acceptance criteria](docs/design.md)
-- [Connection profile and adapters](docs/connections.md)
-- [Project library](docs/project-library.md)
-- [AI casting](docs/ai-casting.md)
-- [Voice sources](docs/voices.md) and [voice expansion](docs/voice-expansion.md)
-- [TTS alternatives and costs](docs/tts-options.md)
-- [Cast screen and highlights](docs/studio-navigation-highlights.md)
-- [Desktop rehearsal roadmap](docs/desktop-rehearsal-roadmap.md)
-- [Product research](docs/research.md)
-- [Brand assets](docs/brand.md)
+- [Connection profile and keys](docs/connections.md)
+- [Stock voices and your own voice](docs/voices.md)
+- [Voice server](voice-server/README.md)
 
 ## Credits and licenses
 

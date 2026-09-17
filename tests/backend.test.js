@@ -4,7 +4,7 @@ import { mkdtemp, rm, readdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { createApp, validateRender } from '../server/app.js';
+import { createApp, speechChunks, validateRender } from '../server/app.js';
 import { decodeWav, encodeWav, assembleScene, SAMPLE_RATE } from '../server/audio.js';
 import { parseScript } from '../src/parser.ts';
 
@@ -59,6 +59,14 @@ test('render validation rejects unknown voices, duplicate ids, oversized input a
   assert.throws(() => validateRender(script, voices), /500,000/);
 });
 
+test('a long run-on sentence is split at spaces and keeps every letter', () => {
+  const sentence = Array.from({ length: 150 }, (_, i) => `words${i} sits`).join(' ');
+  assert.ok(sentence.length > 1200 && !/[.!?]/.test(sentence));
+  const chunks = speechChunks(sentence);
+  assert.ok(chunks.length > 1 && chunks.every(chunk => chunk.length <= 1000));
+  assert.equal(chunks.join(' '), sentence);
+});
+
 async function withServer(fn, serviceFetch) {
   const testDir = await mkdtemp(path.join(os.tmpdir(), 'script-glow-test-'));
   // Production exports live below a hidden .cache ancestor. Express sendFile
@@ -70,7 +78,7 @@ async function withServer(fn, serviceFetch) {
     if (url.endsWith('/health')) return Buffer.from('{"status":"ok"}');
     calls++; return wav;
   });
-  const server = createApp({ cacheDir, serviceFetch: mock }).listen(0, '127.0.0.1');
+  const server = createApp({ cacheDir, serviceFetch: mock, previewDir: path.join(testDir, 'previews'), connectionsFile: path.join(testDir, 'connections.json'), secretsFile: path.join(testDir, 'secrets.json') }).listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   try { await fn(base, () => calls, cacheDir); }

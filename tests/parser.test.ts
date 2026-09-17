@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseScript, SAMPLE } from '../src/parser.ts';
+import { parseScript, SAMPLE, sceneIncludes, spokenText, spokenLines } from '../src/parser.ts';
 
 test('sample identifies scenes and cast without treating prose as dialogue', () => {
   const script = parseScript(SAMPLE);
@@ -134,4 +134,35 @@ test('character extensions of any kind or case belong to the base character', ()
   assert.deepEqual(script.characters, ['SARAH']);
   assert.ok(script.scenes[0].lines.every(line => line.kind === 'dialogue' && line.character === 'SARAH'));
   assert.equal(script.scenes[0].lines.map(line => line.text).join(' '), 'Hello. Are you there? Still here. Goodbye.');
+});
+
+test('a scene counts as the actor\'s when they speak or a direction names them', () => {
+  const scene = (lines: { character: string; text: string; kind: 'dialogue' | 'direction' }[]) => ({ id: 's', title: 'SCENE 1', lines: lines.map((line, index) => ({ id: `l${index}`, ...line })) });
+  const speaks = scene([{ character: 'DAVID', text: 'Hello.', kind: 'dialogue' }]);
+  const silent = scene([{ character: '', text: 'DAVID watches from the door and says nothing.', kind: 'direction' }, { character: 'ANNA', text: 'Hello.', kind: 'dialogue' }]);
+  const absent = scene([{ character: 'ANNA', text: 'Where is David tonight?', kind: 'dialogue' }]);
+  assert.equal(sceneIncludes(speaks, 'DAVID'), true);
+  assert.equal(sceneIncludes(silent, 'DAVID'), true, 'An unspoken part still puts the actor in the scene');
+  assert.equal(sceneIncludes(absent, 'DAVID'), false, 'Being talked about is not being in the scene');
+  assert.equal(sceneIncludes(silent, 'DAVIDSON'), false, 'A longer name is not a partial match');
+  assert.equal(sceneIncludes(speaks, ''), false);
+  assert.equal(sceneIncludes(scene([{ character: '', text: 'AX watches the door.', kind: 'direction' }]), 'A.'), false, 'A name with punctuation is escaped, so the dot is not a wildcard');
+});
+
+test('a parenthetical is shown on the page and never spoken', () => {
+  assert.equal(spokenText('I knew it was you. (grinning) It was always you.'), 'I knew it was you. It was always you.');
+  assert.equal(spokenText('(beat) Go on.'), 'Go on.');
+  assert.equal(spokenText('Stop (quietly), please.'), 'Stop, please.', 'The punctuation after a note is not left stranded');
+  assert.equal(spokenText('(grinning)'), '', 'A line that is only a note has nothing to say');
+  assert.equal(spokenText('Nothing to strip here.'), 'Nothing to strip here.');
+  const lines = [
+    { id: '1', character: 'JOHN', text: 'I knew it was you. (grinning) It was always you.', kind: 'dialogue' as const },
+    { id: '2', character: 'Narrator', text: 'beat', kind: 'direction' as const, format: 'parenthetical' as const },
+    { id: '3', character: 'JOHN', text: '(grinning)', kind: 'dialogue' as const },
+    { id: '4', character: 'Narrator', text: 'He turns away.', kind: 'direction' as const },
+  ];
+  assert.deepEqual(spokenLines(lines).map(line => [line.id, line.text]), [
+    ['1', 'I knew it was you. It was always you.'],
+    ['4', 'He turns away.'],
+  ], 'Notes drop out, prose directions stay, and line ids keep their place');
 });

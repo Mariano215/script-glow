@@ -15,7 +15,7 @@ const { voices } = await json('/api/voices');
 const { casting } = await json('/api/connections');
 const actorVoice = casting.preferredActorVoice || voices[0];
 assert.ok(voices.includes(actorVoice), 'The preferred actor voice must be installed.');
-const partnerVoice = voices.find((voice) => voice === 'Stock-Mica') || voices.find((voice) => voice === 'British-Female') || voices.find((voice) => ![actorVoice, 'default'].includes(voice));
+const partnerVoice = voices.find((voice) => voice === 'Stock-Mica') || voices.find((voice) => ![actorVoice, 'default'].includes(voice));
 assert.ok(partnerVoice, 'A distinct scene partner voice is required.');
 const scene = {
   id: 'live-smoke', title: 'The rehearsal room', lines: [

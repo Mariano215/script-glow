@@ -116,7 +116,7 @@ test('configured URLs/model are injected, public profile is read-only and privat
     assert.equal((await fetch(base + '/private-voice-preview.wav')).status, 404);
     assert.equal((await (await fetch(base + '/api/connections')).json()).casting.previewUrl, undefined);
     const inference = await post(base, '/api/casting/guess-genders', { names: ['DAVID'] });
-    assert.equal(inference.status, 503); assert.match((await inference.json()).error, /installed Ollama model/);
+    assert.equal(inference.status, 503); assert.match((await inference.json()).error, /Name guessing is off/);
   });
 }));
 

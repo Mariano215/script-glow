@@ -15,3 +15,10 @@ export function readHighlights(value: Partial<HighlightPreferences>): HighlightP
   };
 }
 export const highlightedCharacter = (preferences: HighlightPreferences, role: string): string => preferences.highlightCharacter === '@role' ? role : preferences.highlightCharacter;
+
+export interface RevealPreferences { hide: boolean; listen: boolean }
+// Listen only covers every character, so it already includes "hide my lines".
+// ponytail: two booleans, not a level enum. Collapse them when a third level
+// (first-letter hints) actually lands; a two-value enum is churn for no gain.
+export const lineHidden = (preferences: RevealPreferences, mine: boolean, revealed: boolean): boolean =>
+  !revealed && (preferences.listen || (preferences.hide && mine));

@@ -221,7 +221,7 @@
 
 .script-page .hidden-line small {
   margin: 0;
-  color: #65715d;
+  color: #5d6956;
   font: 10pt/1.2 'Courier New', Courier, monospace;
 }
 
@@ -236,6 +236,25 @@
     padding: 12px;
     max-height: 590px;
   }
+  /* A phone cannot show a letter-size page. The layout keeps the screenplay shape in proportion,
+     so every line wraps inside the screen at a readable size. */
+  .script-panel .script-page {
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    padding: 44px 16px 24px;
+    font-size: 15px;
+    line-height: 1.35;
+  }
+  .script-page .script-meta { top: 14px; left: 16px; right: 16px; font-size: 12px; }
+  .script-page .direction { width: auto; }
+  .script-page .dialogue,
+  .script-page .dialogue.my-line,
+  .script-page .dialogue.active { width: auto; margin-left: 8%; margin-right: 4%; }
+  .script-page .character-label { margin-left: 22%; }
+  .script-page .direction.parenthetical { width: auto; margin-left: 18%; }
+  .script-page .dialogue .parenthetical { width: auto; margin-left: 12%; }
+  .script-page .direction.active::before { left: -10px; }
 }
 
 @page {
@@ -306,3 +325,10 @@
     box-shadow: none !important;
   }
 }
+.reading-legend { display: inline-flex; align-items: center; gap: 6px; }
+.reading-legend i { display: inline-block; width: 14px; height: 14px; border-radius: 3px; border: 1px solid #0002; margin-left: 8px; }
+.script-page .empty-state { font-family: 'DM Sans', sans-serif; text-align: center; padding: 60px 10px; }
+.script-page .empty-state p { font-size: 15px; color: #4d5a50; margin: 8px 0; }
+.script-page .empty-state .empty-copy { font-size: 20px; color: var(--ink); }
+.empty-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 18px; }
+@media (max-width: 650px) { .script-footer > span:first-child { display: none; } }

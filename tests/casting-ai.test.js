@@ -18,7 +18,7 @@ const post = (base, route, body, headers = {}) => fetch(base + route, { method: 
 const renderInput = { scene: { id: 'one', title: 'Room', lines: [{ id: 'a', kind: 'dialogue', character: 'DAVID', text: 'Hello.' }] }, voices: { DAVID: 'MyVoice' }, myCharacter: 'DAVID', gapSeconds: 0, includeDirections: false };
 async function withServer(serviceFetch, fn) {
   const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'script-glow-casting-'));
-  const server = createApp({ cacheDir, serviceFetch, connections: { ...DEFAULT_CONNECTIONS, ollama: { url: OLLAMA_URL, model: CASTING_MODEL } } }).listen(0, '127.0.0.1');
+  const server = createApp({ cacheDir, serviceFetch, previewDir: path.join(cacheDir, 'previews'), connectionsFile: path.join(cacheDir, 'connections.json'), secretsFile: path.join(cacheDir, 'secrets.json'), connections: { ...DEFAULT_CONNECTIONS, ollama: { url: OLLAMA_URL, model: CASTING_MODEL } } }).listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   try { await fn(`http://127.0.0.1:${server.address().port}`); }
   finally { await new Promise(resolve => server.close(resolve)); await rm(cacheDir, { recursive: true, force: true }); }

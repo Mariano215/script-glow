@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { createApp } from '../server/app.js';
-import { createProjectStore } from '../server/projects.js';
+import { createProjectStore, validatePreferences } from '../server/projects.js';
 import { encodeWav } from '../server/audio.js';
 
 const preferences = () => ({ source: 'INT. ROOM - DAY\n\nDAVID\nHello.', name: 'Test script', role: 'DAVID', cast: { DAVID: 'MyVoice' }, guesses: {}, genders: {}, manualVoices: {}, sceneId: 'scene-1', gap: 0, directions: false, hide: false, follow: true, loop: false, rate: 1, mode: 'full' });
@@ -13,8 +13,8 @@ const input = (number = 1) => ({ scene: { id: `scene-${number}`, title: `Scene $
 const wav = encodeWav(Buffer.alloc(4800, 16));
 const post = (base, endpoint, body, method = 'POST', headers = {}) => fetch(base + endpoint, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
 async function fixture(fn) {
-  const temp = await mkdtemp(path.join(os.tmpdir(), 'script-glow-projects-')); const projectsDir = path.join(temp, 'library'); const cacheDir = path.join(temp, 'cache'); let calls = 0;
-  const app = createApp({ cacheDir, projectsDir, serviceFetch: async url => { if (url.endsWith('/v1/voices')) return Buffer.from('["MyVoice"]'); if (url.endsWith('/health')) return Buffer.from('{}'); calls++; return wav; } });
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'script-glow-projects-')); const projectsDir = path.join(temp, '.apps', 'library'); /* a dot folder above the app, as in ~/.local */ const cacheDir = path.join(temp, 'cache'); let calls = 0;
+  const app = createApp({ cacheDir, projectsDir, previewDir: path.join(temp, 'previews'), connectionsFile: path.join(temp, 'connections.json'), secretsFile: path.join(temp, 'secrets.json'), serviceFetch: async url => { if (url.endsWith('/v1/voices')) return Buffer.from('["MyVoice"]'); if (url.endsWith('/health')) return Buffer.from('{}'); calls++; return wav; } });
   const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve)); const base = `http://127.0.0.1:${server.address().port}`;
   try { await fn({ base, projectsDir, cacheDir, calls: () => calls, store: createProjectStore(projectsDir, cacheDir) }); }
   finally { await new Promise(resolve => server.close(resolve)); await rm(temp, { recursive: true, force: true }); }
@@ -131,3 +131,26 @@ test('old render versions are evicted beyond the per-project limit and their aud
   const files = await readdir(path.join(projectsDir, document.id));
   for (const url of [runs[0].result.fullUrl, runs[0].result.practiceUrl]) assert.ok(!files.includes(path.basename(url)));
 }));
+
+test('deleting a project moves all of it to .trash, lists it no more, and needs this launch\'s secret from a browser', async () => fixture(async ({ base, projectsDir }) => {
+  const created = await (await post(base, '/api/projects', { preferences: preferences() })).json();
+  const { session } = await (await fetch(`${base}/api/session`)).json();
+  const outsider = await fetch(`${base}/api/projects/${created.id}`, { method: 'DELETE', headers: { Origin: base } });
+  assert.equal(outsider.status, 403, 'A page elsewhere cannot delete a project');
+  const removed = await fetch(`${base}/api/projects/${created.id}`, { method: 'DELETE', headers: { Origin: base, 'x-script-glow-session': session } });
+  assert.equal(removed.status, 200);
+  const { keptIn } = await removed.json();
+  assert.match(keptIn, new RegExp(`^\\.trash[\\\\/]${created.id}-\\d+$`));
+  assert.equal(JSON.parse(await readFile(path.join(projectsDir, keptIn, 'project.json'), 'utf8')).id, created.id, 'The project is kept whole in the trash');
+  assert.equal((await (await fetch(`${base}/api/projects`)).json()).projects.some(item => item.id === created.id), false);
+  assert.equal((await fetch(`${base}/api/projects/${created.id}`, { method: 'DELETE' })).status, 404, 'A project cannot be deleted twice');
+  assert.equal((await fetch(`${base}/api/projects/..%2F..%2Fetc`, { method: 'DELETE' })).status >= 400, true);
+}));
+
+test('build up line by line and its repeat count are kept with the project', () => {
+  const kept = validatePreferences({ ...preferences(), build: true, buildRepeats: 3 });
+  assert.equal(kept.build, true);
+  assert.equal(kept.buildRepeats, 3);
+  assert.equal(validatePreferences(preferences()).buildRepeats, 2);
+  for (const buildRepeats of [0, 1.5, '3', 11]) assert.throws(() => validatePreferences({ ...preferences(), buildRepeats }), /rehearsal settings/);
+});

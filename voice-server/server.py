@@ -5,14 +5,21 @@ API used by Script Glow:
   GET  /health      service status
   GET  /v1/voices   {"voices": ["default", <names of .wav files in voices/>]}
   POST /v1/tts      {"text": "...", "voice": "<name>"} -> WAV audio
+  PUT  /v1/voices/<name>[?replace=true]  body: a PCM WAV, 5 to 30 seconds -> saved as voices/<name>.wav
   POST /v1/unload   free GPU memory now
 
 A voice is a short reference recording, voices/<name>.wav. "default" uses
 voices/default.wav when present, otherwise Chatterbox's built-in voice.
 The model unloads after IDLE_TIMEOUT seconds without requests.
 
-Environment: VOICE_HOST (127.0.0.1), VOICE_PORT (8095), VOICES_DIR (./voices).
-There is no authentication. Keep the host on 127.0.0.1 unless the network is private.
+Environment: VOICE_HOST (127.0.0.1), VOICE_PORT (8095), VOICES_DIR (./voices),
+VOICE_TOKEN (none), VOICE_ALLOWED_HOSTS (none), VOICE_UPLOADS (on for 127.0.0.1, off otherwise).
+
+Only requests addressed to this computer's own name are answered, so a web page cannot reach the
+server by pointing its own domain at 127.0.0.1. To serve other machines, set VOICE_HOST, list the
+names they use in VOICE_ALLOWED_HOSTS, and set VOICE_TOKEN: every request except /health must then
+send the same value in the X-Voice-Token header. The server refuses to start on a network address
+without a token.
 """
 
 import asyncio
@@ -20,16 +27,20 @@ import io
 import os
 import re
 import time
+import wave
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
+import hmac
+
 import torch
 import torchaudio
 import uvicorn
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import Response
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 HOST = os.environ.get("VOICE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("VOICE_PORT", "8095"))
@@ -37,6 +48,12 @@ VOICES_DIR = Path(os.environ.get("VOICES_DIR", Path(__file__).parent / "voices")
 IDLE_TIMEOUT = 300  # seconds before the model unloads from GPU memory
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 VOICE_NAME = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
+LOOPBACK = HOST in ("127.0.0.1", "localhost", "::1")
+TOKEN = os.environ.get("VOICE_TOKEN", "")
+# New voices are accepted by default only while the server is private to this computer.
+UPLOADS = os.environ.get("VOICE_UPLOADS", "on" if LOOPBACK else "off").lower() != "off"
+ALLOWED_HOSTS = [h for h in ["127.0.0.1", "localhost", "[::1]", HOST, *os.environ.get("VOICE_ALLOWED_HOSTS", "").split(",")] if h.strip()]
+MAX_UPLOAD = 10 * 1024 * 1024  # bytes; 30 seconds of 48 kHz stereo 16-bit is under 6 MB
 
 _model = None
 _last_used = 0.0
@@ -121,6 +138,18 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Script Glow voice server", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def require_token(request: Request, call_next):
+    # compare_digest takes the same time for any wrong token, so the token cannot be guessed by timing.
+    if TOKEN and request.url.path != "/health" and not hmac.compare_digest(request.headers.get("x-voice-token", "").encode(), TOKEN.encode()):
+        return JSONResponse({"detail": "Wrong or missing voice token."}, status_code=401)
+    return await call_next(request)
+
+
+# Added last, so it runs first: a request for any other host name is refused before anything else.
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=[h.strip() for h in ALLOWED_HOSTS])
+
+
 class TTSRequest(BaseModel):
     text: str = Field(max_length=20000)
     voice: str = Field(default="default", description="Name of a .wav file in voices/, or default")
@@ -162,6 +191,44 @@ async def list_voices():
     return {"voices": ["default", *_voice_names()]}
 
 
+@app.put("/v1/voices/{name}")
+async def save_voice(name: str, request: Request, replace: bool = False):
+    """Add a reference recording. An existing voice is only replaced when asked."""
+    if not UPLOADS:
+        raise HTTPException(403, "This voice server does not accept new voices (VOICE_UPLOADS=off).")
+    if not VOICE_NAME.match(name) or name == "default":
+        raise HTTPException(400, "Voice names may use letters, numbers, - and _ only, and cannot be default.")
+    if request.headers.get("content-type", "").split(";")[0].strip().lower() not in ("audio/wav", "audio/x-wav", "audio/wave"):
+        raise HTTPException(415, "Send the recording as audio/wav.")
+    body = bytearray()
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > MAX_UPLOAD:
+            raise HTTPException(413, "The recording is larger than 10 MB.")
+    try:
+        with wave.open(io.BytesIO(bytes(body))) as clip:
+            seconds = clip.getnframes() / clip.getframerate()
+    except (wave.Error, EOFError, ZeroDivisionError):
+        raise HTTPException(400, "Send a PCM WAV recording.")
+    if not 5 <= seconds <= 30:
+        raise HTTPException(400, f"A voice needs 5 to 30 seconds of speech; this is {seconds:.1f} seconds.")
+    target = VOICES_DIR / f"{name}.wav"
+    # Windows and macOS ignore case in file names: "stock-mica" would overwrite Stock-Mica.wav.
+    if any(v.lower() == name.lower() and v != name for v in _voice_names()):
+        raise HTTPException(409, f"A voice with the name {name} in other capital letters already exists.")
+    if target.exists() and not replace:
+        raise HTTPException(409, f"A voice named {name} already exists.")
+    VOICES_DIR.mkdir(parents=True, exist_ok=True)
+    # Written whole or not at all, so a half-saved file is never used as a voice.
+    temporary = VOICES_DIR / f".{name}.{os.getpid()}.upload"
+    temporary.write_bytes(bytes(body))
+    # The replaced recording is kept once, as a hidden file the voice list ignores.
+    if target.exists():
+        os.replace(target, VOICES_DIR / f".{name}.previous.wav")
+    os.replace(temporary, target)
+    return {"voice": name, "seconds": round(seconds, 1)}
+
+
 @app.post("/v1/unload")
 async def unload():
     async with _lock:
@@ -170,5 +237,8 @@ async def unload():
 
 
 if __name__ == "__main__":
+    if not LOOPBACK and len(TOKEN) < 20:
+        raise SystemExit("VOICE_HOST is a network address. Set VOICE_TOKEN to a secret of 20 or more characters first, for example:\n"
+                         '  python -c "import secrets; print(secrets.token_urlsafe(32))"')
     VOICES_DIR.mkdir(parents=True, exist_ok=True)
     uvicorn.run(app, host=HOST, port=PORT)

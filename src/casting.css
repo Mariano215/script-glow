@@ -1,12 +1,12 @@
 .cast-row > div { min-width: 0; width: 100%; }
 .cast-row select[data-gender] { font-size: 13px; padding: 7px 2px; color: #344d3b; }
-.cast-row select[data-cast] { font-size: 13px; padding: 7px 2px; }
-.cast-row select[data-cast] option:disabled { color: #777; background: #eee; }
+.cast-row select[data-cast], .cast-row select[data-gender] { font-size: 14px; padding: 7px 2px; color: var(--ink); border-bottom-color: #b9c4ad; }
+.cast-row select[data-cast] option:disabled { color: #656565; background: #eee; }
 .casting-conflict { display: block; color: #865321; font-size: 13px; line-height: 1.5; margin-top: 5px; }
 .ai-casting { padding: 10px; margin: 12px 0; border: 1px solid #c8d0bf; border-radius: 4px; }
 .ai-casting p { margin: 0; font-size: 13px; line-height: 1.5; color: #465440; }
 .ai-casting button { margin-top: 8px; font-size: 13px; padding: 8px; border: 1px solid #a4b297; border-radius: 4px; background: #e8eee1; }
-.casting-evidence { display: block; font-size: 13px; line-height: 1.5; color: #657060; margin-top: 4px; }
+.casting-evidence { display: block; font-size: 13px; line-height: 1.5; color: #5e6859; margin-top: 4px; }
 .cast-row { align-items: flex-start; }
 .cast-row .cast-avatar { margin-top: 2px; }
 .scenes .scene-tab[data-action="scope-script"] { border: 1px solid #4b5b4b; margin-bottom: 12px; }
@@ -17,13 +17,13 @@
 .voice-actions button { background: #e8eee1; border: 1px solid #becbb3; border-radius: 4px; padding: 7px 9px; font-size: 13px; min-height: 34px; }
 .voice-actions button[aria-pressed="true"] { background: #344d3b; color: #fff; }
 .voice-actions a { font-size: 13px; color: #4e643f; text-underline-offset: 2px; }
-.preview-unavailable, .voice-catalog-note { display: block; font-size: 13px; line-height: 1.5; color: #67715f; margin: 8px 0 0; }
+.preview-unavailable, .voice-catalog-note { display: block; font-size: 13px; line-height: 1.5; color: #5f6958; margin: 8px 0 0; }
 #voice-preview-status { font-size: 13px; color: #425638; line-height: 1.5; margin: 10px 0 0; }
 #voice-preview-status:empty { display: none; }
 @media (max-width: 650px) {
   .scenes .scene-tab[data-action="scope-script"] { margin-bottom: 0; }
   .settings-panel { grid-template-columns: 1fr; }
   .settings-panel > * { grid-column: auto; grid-row: auto; }
-  .cast-row select[data-gender], .cast-row select[data-cast] { min-height: 36px; font-size: 12px; }
+  .cast-row select[data-gender], .cast-row select[data-cast] { min-height: 44px; font-size: 15px; }
   .casting-evidence { font-size: 13px; }
 }

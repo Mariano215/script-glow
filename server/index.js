@@ -1,5 +1,10 @@
 import { createApp } from './app.js';
-import { loadConnections } from './connections.js';
-const port = 3001;
-const connections = await loadConnections();
-createApp({ connections }).listen(port, '127.0.0.1', () => console.log(`Script Glow: http://127.0.0.1:${port} · ${connections.name}`));
+import { CONNECTIONS_FILE, loadConnections } from './connections.js';
+import { moveOldSecrets, SECRETS_FILE } from './secrets.js';
+// PORT changes the port only. A second copy still shares data/ and .cache/ with the first.
+const port = Number(process.env.PORT) || 3001;
+// Settings are saved back to the file they were loaded from.
+const connectionsFile = process.env.SCRIPT_GLOW_CONFIG || CONNECTIONS_FILE;
+const connections = await loadConnections(connectionsFile);
+if (await moveOldSecrets()) console.log(`API keys moved to ${SECRETS_FILE}`);
+createApp({ connections, connectionsFile }).listen(port, '127.0.0.1', () => console.log(`Script Glow: http://127.0.0.1:${port} · ${connections.name}`));

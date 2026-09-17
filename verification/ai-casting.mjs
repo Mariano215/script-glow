@@ -1,121 +1,164 @@
-import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
-import { encodeWav } from '../server/audio.js';
+import { choose, fitsWidth, launch, openStudio, preferences, press, studio, until } from './lib.mjs';
 
-await mkdir('artifacts', { recursive: true });
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
+// Name guesses come from a fake Ollama behind the real server. Each request waits until the
+// check answers it, so the check decides when a guess arrives and what it says.
 const voices = ['default', 'MyVoice', 'Stock-Amber', 'Stock-Mica', 'Stock-Quartz', 'Stock-Ash', 'Stock-Granite', 'Stock-Slate'];
-const source = 'CAST\nJORDAN (male)\nTAYLOR (female)\nSAM (male)\nSAM (female)\n\nSCENE 1\nJORDAN: Hello.\nDAVID: Ready.\nELIZABETH: Yes.\nALEX: Welcome.\nTAYLOR: Fine.\nSAM: Okay.';
-const errors = [];
-async function setup(sourceText, saved = {}) {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-  page.on('pageerror', error => errors.push(error.message));
-  await page.route('**/api/health', route => route.fulfill({ json: { tts: { ok: true } } }));
-  await page.route('**/api/voices', route => route.fulfill({ json: { voices } }));
-  await page.addInitScript(({ sourceText, saved }) => {
-    if (!localStorage.getItem('script-glow:v1')) localStorage.setItem('script-glow:v1', JSON.stringify({ source: sourceText, role: 'JORDAN', ...saved }));
-  }, { sourceText, saved });
-  return page;
-}
-const cast = (page, name) => page.locator(`[data-cast="${name}"]`);
-const waitDone = page => page.waitForFunction(() => !document.querySelector('#ai-casting-status')?.textContent.includes('is guessing'));
-try {
-  const page = await setup(source);
-  let pending;
-  await page.route('**/api/casting/guess-genders', route => { pending = route; });
-  await page.goto('http://127.0.0.1:3001');
-  await page.waitForFunction(() => document.querySelector('#ai-casting-status')?.textContent.includes('is guessing'));
-  assert.deepEqual(pending.request().postDataJSON().names, ['DAVID', 'ELIZABETH', 'ALEX']);
-  await cast(page, 'ELIZABETH').selectOption('Stock-Ash');
-  await page.locator('[data-gender="ALEX"]').selectOption('female');
-  await pending.fulfill({ json: { model: 'fixture', guesses: [{ name: 'DAVID', gender: 'male' }, { name: 'ELIZABETH', gender: 'female' }, { name: 'ALEX', gender: 'unknown' }] } });
-  await waitDone(page);
-  assert.equal(await cast(page, 'ELIZABETH').inputValue(), 'Stock-Ash', 'Pending AI preserves manual voice');
-  assert.equal(await page.locator('[data-gender="ALEX"]').inputValue(), 'female', 'Pending AI preserves manual gender');
-  assert.match(await page.locator('[data-gender="DAVID"] option:checked').innerText(), /AI name guess: male/);
-  assert.match(await page.locator('[data-gender="TAYLOR"] option:checked').innerText(), /From script: female/);
-  assert.match(await page.locator('[data-gender="SAM"] option:checked').innerText(), /From script: unspecified/);
-  assert.equal(await cast(page, 'JORDAN').inputValue(), 'MyVoice');
-  assert.ok(await cast(page, 'DAVID').locator('option[value="Stock-Ash"]').isDisabled());
-  assert.match(await cast(page, 'DAVID').locator('option[value="Stock-Ash"]').innerText(), /Assigned to Elizabeth/);
-  assert.ok(await cast(page, 'DAVID').locator('option[value="default"]').isDisabled(), 'actor alias is reserved');
-  assert.ok(!(await cast(page, 'ELIZABETH').locator('option:checked').isDisabled()));
-  await page.screenshot({ path: 'artifacts/ai-casting-desktop.png', fullPage: true });
-  let calls = 0;
-  await page.route('**/api/casting/guess-genders', route => { calls++; return route.fulfill({ status: 500, json: { error: 'Unexpected repeat' } }); });
-  await page.reload();
-  await page.waitForFunction(() => document.querySelector('[data-gender="DAVID"] option:checked')?.textContent.includes('AI name guess'));
-  assert.equal(calls, 0, 'Saved guesses survive refresh without inference');
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({ path: 'artifacts/ai-casting-mobile.png', fullPage: true });
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-  await page.close();
-
-  const shared = await setup('SCENE 1\nJORDAN: Hi.\nDAVID: Hello.', { cast: { JORDAN: 'MyVoice', DAVID: 'default' }, manualVoices: { JORDAN: true, DAVID: true }, guesses: { JORDAN: 'male', DAVID: 'male' } });
-  await shared.goto('http://127.0.0.1:3001');
-  await shared.waitForFunction(() => document.querySelector('[data-cast="DAVID"]')?.value === 'default');
-  assert.equal(await shared.locator('.casting-conflict').count(), 2);
-  assert.ok(!(await cast(shared, 'DAVID').locator('option:checked').isDisabled()), 'Existing duplicated current selection remains enabled');
-  await cast(shared, 'DAVID').selectOption('Stock-Ash');
-  assert.equal(await shared.locator('.casting-conflict').count(), 0);
-  assert.ok(await cast(shared, 'JORDAN').locator('option[value="Stock-Ash"]').isDisabled());
-  await shared.close();
-
-  const malformed = await setup('CAST\nJORDAN (male)\nSCENE 1\nJORDAN: Hi.\nDAVID: Saved project.', { guesses: { DAVID: { toString: 'male' }, JORDAN: ['male'] } });
-  await malformed.route('**/api/casting/guess-genders', route => route.fulfill({ json: { guesses: [{ name: 'DAVID', gender: 'male' }] } }));
-  await malformed.goto('http://127.0.0.1:3001');
-  await malformed.waitForFunction(() => document.querySelector('[data-gender="DAVID"] option:checked')?.textContent.includes('AI name guess'));
-  assert.match(await malformed.locator('.script-page').innerText(), /Saved project/);
-  await malformed.close();
-
-  const stale = await setup('CAST\nJORDAN (male)\nSCENE 1\nJORDAN: Hi.\nDAVID: Hello.');
+function guessing(projects) {
   const requests = [];
-  let secondArrived;
-  const nextBatch = new Promise(resolve => { secondArrived = resolve; });
-  await stale.route('**/api/casting/guess-genders', route => { requests.push(route); if (requests.length === 2) secondArrived(); });
-  await stale.goto('http://127.0.0.1:3001');
-  await stale.waitForFunction(() => document.querySelector('#ai-casting-status')?.textContent.includes('is guessing'));
-  await stale.locator('#file-input').setInputFiles({ name: 'New.txt', mimeType: 'text/plain', buffer: Buffer.from('CAST\nJORDAN (male)\nSCENE 1\nJORDAN: Hi.\nELIZABETH: Welcome.') });
-  await cast(stale, 'ELIZABETH').waitFor();
-  await requests[0].fulfill({ json: { guesses: [{ name: 'DAVID', gender: 'male' }] } });
-  await nextBatch;
-  // The next request is issued only after the stale batch settles.
-  await stale.waitForFunction(() => document.querySelector('#ai-casting-status')?.textContent.includes('is guessing'));
-  assert.equal(requests.length, 2);
-  assert.deepEqual(requests[1].request().postDataJSON().names, ['ELIZABETH']);
-  await requests[1].fulfill({ status: 503, json: { error: 'Local Ollama unavailable. Retry or choose voice types manually.' } });
-  await waitDone(stale);
-  assert.match(await stale.locator('#ai-casting-status').innerText(), /unavailable/);
-  assert.ok(await stale.locator('[data-action="guess-names"]').isEnabled());
-  assert.ok(await stale.locator('[data-action="render"]').isEnabled(), 'AI failure does not prevent rendering');
-  const stored = await stale.evaluate(() => JSON.parse(localStorage.getItem('script-glow:v1')));
-  assert.ok(!stored.guesses.DAVID, 'Stale result never enters new project');
-  await stale.close();
+  const services = (url, options) => {
+    if (!url.endsWith('/api/generate')) return undefined;
+    const names = JSON.parse(options.body).format.properties.guesses.items.properties.name.enum;
+    return new Promise((resolve, reject) => requests.push({
+      names,
+      reply: guesses => resolve(Buffer.from(JSON.stringify({ done: true, response: JSON.stringify({ guesses }) }))),
+      fail: () => reject(new Error('Ollama is offline')),
+    }));
+  };
+  const connections = { ollama: { url: 'http://127.0.0.1:11434', model: 'gemma:2b' }, casting: { preferredActorVoice: 'MyVoice', aliases: { default: 'MyVoice' } } };
+  return studio({ projects, voices, connections, services }).then(app => Object.assign(app, { requests }));
+}
+const value = (page, selector) => page.evaluate(target => document.querySelector(target)?.value, selector);
+const optionText = (page, selector) => page.evaluate(target => document.querySelector(target)?.selectedOptions[0]?.textContent ?? '', selector);
+const optionDisabled = (page, selector) => page.evaluate(target => document.querySelector(target).disabled, selector);
+const status = page => page.evaluate(() => document.querySelector('#ai-casting-status')?.textContent ?? '');
+const guessingNow = page => until(page, 'the AI to start guessing', () => document.querySelector('#ai-casting-status')?.textContent.includes('is guessing'));
+const waitDone = page => until(page, 'the AI to finish', () => !document.querySelector('#ai-casting-status')?.textContent.includes('is guessing'));
+const waitRequest = async (app, count) => { const end = Date.now() + 60000; while (app.requests.length < count) { if (Date.now() > end) throw new Error(`Timed out waiting for name-guess request ${count}`); await new Promise(resolve => setTimeout(resolve, 100)); } return app.requests[count - 1]; };
+const savedOnServer = async (app, check) => {
+  const end = Date.now() + 60000;
+  for (;;) {
+    const listing = await (await fetch(`${app.base}/api/projects`)).json();
+    for (const { id } of listing.projects) if (check(await (await fetch(`${app.base}/api/projects/${id}`)).json())) return;
+    if (Date.now() > end) throw new Error('Timed out waiting for the project to save');
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+};
+const downloads = page => page.locator('.downloads a[download]').count();
 
-  const deferred = await setup('CAST\nJORDAN (male)\nSCENE 1\nJORDAN: Hi.\nELIZABETH: Welcome.');
-  let aiAttempts = 0, delayed;
-  await deferred.route('**/api/casting/guess-genders', route => { aiAttempts++; if (aiAttempts === 1) return route.fulfill({ status: 503, json: { error: 'Offline; retry later.' } }); delayed = route; });
-  let input;
-  await deferred.route('**/api/render', route => { input = route.request().postDataJSON(); return route.fulfill({ status: 202, json: { jobId: 'ai-fixture' } }); });
-  await deferred.route('**/api/jobs/ai-fixture', route => route.fulfill({ json: { id: 'ai-fixture', status: 'complete', completed: 2, total: 2, result: { fullUrl: '/audio/ai-fixture-full.wav', practiceUrl: '/audio/ai-fixture-practice.wav', duration: 4, cues: input.scene.lines.filter(line => line.kind === 'dialogue').map((line, i) => ({ lineId: line.id, character: line.character, start: i * 2, end: i * 2 + 1 })) } } }));
-  await deferred.route('**/audio/ai-fixture-*.wav', route => route.fulfill({ contentType: 'audio/wav', body: encodeWav(Buffer.alloc(48000 * 4)) }));
-  await deferred.goto('http://127.0.0.1:3001');
-  await deferred.waitForFunction(() => document.querySelector('#ai-casting-status')?.textContent.includes('Offline'));
-  await deferred.locator('[data-action="render"]').click();
-  await deferred.locator('a[download]').first().waitFor();
-  const original = await cast(deferred, 'ELIZABETH').inputValue();
-  const desiredGender = original === 'Stock-Amber' || original === 'Stock-Mica' || original === 'Stock-Quartz' ? 'male' : 'female';
-  await deferred.locator('[data-action="guess-names"]').click();
-  await deferred.waitForFunction(() => document.querySelector('#ai-casting-status')?.textContent.includes('is guessing'));
-  await delayed.fulfill({ json: { guesses: [{ name: 'ELIZABETH', gender: desiredGender }] } });
+const browser = await launch();
+const errors = [];
+const apps = [];
+try {
+  // Pending guesses never overwrite choices made while they are on the way.
+  const source = 'CAST\nJORDAN (male)\nTAYLOR (female)\nSAM (male)\nSAM (female)\n\nSCENE 1\nJORDAN: Hello.\nDAVID: Ready.\nELIZABETH: Yes.\nALEX: Welcome.\nTAYLOR: Fine.\nSAM: Okay.';
+  const first = await guessing([preferences(source, { role: 'JORDAN' })]); apps.push(first);
+  const page = await openStudio(browser, first.base, { hash: '#cast' });
+  await guessingNow(page);
+  const pending = await waitRequest(first, 1);
+  assert.deepEqual(pending.names, ['DAVID', 'ELIZABETH', 'ALEX']);
+  await choose(page, '[data-cast="ELIZABETH"]', 'Stock-Ash');
+  await choose(page, '[data-gender="ALEX"]', 'female');
+  pending.reply([{ name: 'DAVID', gender: 'male' }, { name: 'ELIZABETH', gender: 'female' }, { name: 'ALEX', gender: 'unknown' }]);
+  await waitDone(page);
+  assert.equal(await value(page, '[data-cast="ELIZABETH"]'), 'Stock-Ash', 'Pending AI preserves manual voice');
+  assert.equal(await value(page, '[data-gender="ALEX"]'), 'female', 'Pending AI preserves manual gender');
+  assert.match(await optionText(page, '[data-gender="DAVID"]'), /AI name guess: male/);
+  assert.match(await optionText(page, '[data-gender="TAYLOR"]'), /From script: female/);
+  assert.match(await optionText(page, '[data-gender="SAM"]'), /From script: unspecified/);
+  assert.match(await status(page), /suggestions, not facts/, 'Guesses are labelled as suggestions');
+  assert.equal(await value(page, '[data-cast="JORDAN"]'), 'MyVoice');
+  assert.ok(await optionDisabled(page, '[data-cast="DAVID"] option[value="Stock-Ash"]'));
+  assert.match(await page.locator('[data-cast="DAVID"] option[value="Stock-Ash"]').innerText(), /Assigned to Elizabeth/);
+  assert.ok(await optionDisabled(page, '[data-cast="DAVID"] option[value="default"]'), 'actor alias is reserved');
+  assert.ok(!(await optionDisabled(page, '[data-cast="ELIZABETH"] option[value="Stock-Ash"]')));
+  const asked = first.requests.length;
+  await savedOnServer(first, doc => doc.preferences.guesses.DAVID === 'male');
+  await page.reload();
+  await until(page, 'the project to open', () => document.querySelector('#project-save-status')?.textContent === 'Saved locally');
+  await until(page, 'saved guesses after a reload', () => document.querySelector('[data-gender="DAVID"]')?.selectedOptions[0]?.textContent.includes('AI name guess'));
+  assert.equal(first.requests.length, asked, 'Saved guesses survive refresh without inference');
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await fitsWidth(page));
+  errors.push(...page.errors);
+  await page.context().close();
+
+  // A voice already shared by two characters stays selectable until one of them moves.
+  const sharedApp = await guessing([preferences('SCENE 1\nJORDAN: Hi.\nDAVID: Hello.', { role: 'JORDAN', cast: { JORDAN: 'MyVoice', DAVID: 'default' }, manualVoices: { JORDAN: true, DAVID: true }, guesses: { JORDAN: 'male', DAVID: 'male' } })]); apps.push(sharedApp);
+  const shared = await openStudio(browser, sharedApp.base, { hash: '#cast' });
+  await until(shared, 'the shared voice', () => document.querySelector('[data-cast="DAVID"]')?.value === 'default');
+  const sharedNotes = () => shared.locator('.casting-conflict', { hasText: 'Shared with' }).count();
+  assert.equal(await sharedNotes(), 2);
+  assert.ok(!(await optionDisabled(shared, '[data-cast="DAVID"] option[value="default"]')), 'Existing duplicated current selection remains enabled');
+  await choose(shared, '[data-cast="DAVID"]', 'Stock-Ash');
+  await until(shared, 'the shared-voice notes to clear', () => ![...document.querySelectorAll('.casting-conflict')].some(note => note.textContent.includes('Shared with')));
+  assert.ok(await optionDisabled(shared, '[data-cast="JORDAN"] option[value="Stock-Ash"]'));
+  assert.equal(sharedApp.requests.length, 0, 'Saved guesses need no inference');
+  errors.push(...shared.errors);
+  await shared.context().close();
+
+  // Malformed saved guesses never reach the library. An old browser draft is the only way they
+  // could still arrive, and that draft should open with its names guessed afresh.
+  const malformedSource = 'CAST\nJORDAN (male)\nSCENE 1\nJORDAN: Hi.\nDAVID: Saved project.';
+  const malformedApp = await guessing([]); apps.push(malformedApp);
+  const refused = await fetch(`${malformedApp.base}/api/projects`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ preferences: preferences(malformedSource, { guesses: { DAVID: { toString: 'male' } } }) }) });
+  assert.equal(refused.status, 400, 'The library refuses malformed guesses');
+  const legacy = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  await legacy.addInitScript(saved => { if (!localStorage.getItem('script-glow:project:v1')) localStorage.setItem('script-glow:v1', JSON.stringify(saved)); }, preferences(malformedSource, { role: 'JORDAN', guesses: { DAVID: { toString: 'male' }, JORDAN: ['male'] } }));
+  const malformed = await legacy.newPage();
+  malformed.on('pageerror', error => errors.push(error.message));
+  await malformed.goto(`${malformedApp.base}/#cast`);
+  (await waitRequest(malformedApp, 1)).reply([{ name: 'DAVID', gender: 'male' }]);
+  await until(malformed, 'the guess for the old draft', () => document.querySelector('[data-gender="DAVID"]')?.selectedOptions[0]?.textContent.includes('AI name guess'));
+  assert.match(await malformed.locator('.script-page').innerText(), /Saved project/);
+  await legacy.close();
+
+  // A reply for a project that is no longer open never enters the new one.
+  const staleApp = await guessing([preferences('CAST\nJORDAN (male)\nSCENE 1\nJORDAN: Hi.\nDAVID: Hello.', { role: 'JORDAN', name: 'First' })]); apps.push(staleApp);
+  const stale = await openStudio(browser, staleApp.base, { hash: '#cast' });
+  await guessingNow(stale);
+  const old = await waitRequest(staleApp, 1);
+  await stale.locator('#file-input').setInputFiles({ name: 'New.txt', mimeType: 'text/plain', buffer: Buffer.from('CAST\nJORDAN (male)\nSCENE 1\nJORDAN: Hi.\nELIZABETH: Welcome.') });
+  await until(stale, 'the imported project', () => !!document.querySelector('[data-cast="ELIZABETH"]'));
+  assert.equal(staleApp.requests.length, 1, 'The next request waits for the stale batch to settle');
+  old.reply([{ name: 'DAVID', gender: 'male' }]);
+  const next = await waitRequest(staleApp, 2);
+  await guessingNow(stale);
+  assert.deepEqual(next.names, ['ELIZABETH']);
+  next.fail();
+  await waitDone(stale);
+  assert.match(await status(stale), /unavailable/);
+  assert.ok(!(await optionDisabled(stale, '[data-action="guess-names"]')));
+  assert.ok(!(await optionDisabled(stale, '[data-action="render"]')), 'AI failure does not prevent making audio');
+  const imported = (await (await fetch(`${staleApp.base}/api/projects`)).json()).projects.find(item => item.id !== staleApp.projects[0].id);
+  await until(stale, 'the new project to save', () => document.querySelector('#project-save-status')?.textContent === 'Saved locally');
+  const stored = await (await fetch(`${staleApp.base}/api/projects/${imported.id}`)).json();
+  assert.ok(!stored.preferences.guesses.DAVID, 'Stale result never enters new project');
+  errors.push(...stale.errors);
+  await stale.context().close();
+
+  // Guesses that arrive after audio was made wait for the actor to apply them.
+  const deferredApp = await guessing([preferences('CAST\nJORDAN (male)\nSCENE 1\nJORDAN: Hi.\nELIZABETH: Welcome.', { role: 'JORDAN' })]); apps.push(deferredApp);
+  const deferred = await openStudio(browser, deferredApp.base, { hash: '#cast' });
+  (await waitRequest(deferredApp, 1)).fail();
+  await until(deferred, 'the offline message', () => document.querySelector('#ai-casting-status')?.textContent.includes('unavailable'));
+  await press(deferred, '[data-action="render"]');
+  await until(deferred, 'the audio', () => !!document.querySelector('.downloads a[download]'));
+  const original = await value(deferred, '[data-cast="ELIZABETH"]');
+  const desiredGender = ['Stock-Amber', 'Stock-Mica', 'Stock-Quartz'].includes(original) ? 'male' : 'female';
+  await press(deferred, '[data-action="guess-names"]');
+  await guessingNow(deferred);
+  (await waitRequest(deferredApp, 2)).reply([{ name: 'ELIZABETH', gender: desiredGender }]);
   await waitDone(deferred);
-  assert.equal(await cast(deferred, 'ELIZABETH').inputValue(), original);
-  assert.ok(await deferred.locator('a[download]').first().isVisible(), 'AI reply preserves rendered audio');
-  await deferred.locator('[data-action="apply-guesses"]').click();
-  assert.notEqual(await cast(deferred, 'ELIZABETH').inputValue(), original);
-  assert.equal(await deferred.locator('a[download]').count(), 0, 'Explicit application invalidates changed audio');
-  await deferred.close();
+  assert.equal(await value(deferred, '[data-cast="ELIZABETH"]'), original);
+  assert.ok(await downloads(deferred) > 0, 'AI reply preserves made audio');
+  await press(deferred, '[data-action="apply-guesses"]');
+  assert.notEqual(await value(deferred, '[data-cast="ELIZABETH"]'), original);
+  assert.equal(await downloads(deferred), 0, 'Explicit application invalidates changed audio');
+  errors.push(...deferred.errors);
+  await deferred.context().close();
+
+  // With no model chosen, the Cast screen sends the actor to Settings instead of retrying.
+  const offApp = await studio({ projects: [preferences('SCENE 1\nJORDAN: Hi.\nELIZABETH: Welcome.', { role: 'JORDAN' })], voices }); apps.push(offApp);
+  const off = await openStudio(browser, offApp.base, { hash: '#cast' });
+  await until(off, 'the name-guessing-off message', () => document.querySelector('#ai-casting-status')?.textContent.includes('Name guessing is off'));
+  assert.equal(await off.locator('.ai-casting a[href="#settings"]').count(), 1);
+  assert.equal(await off.locator('[data-action="guess-names"]').count(), 0);
+  errors.push(...off.errors);
+
   assert.deepEqual(errors, []);
-  console.log('AI casting verified: disabled ownership/aliases, manual/script priority, cache, stale replies, offline fallback, saved audio, mobile.');
-} finally { await browser.close(); }
+  console.log('PASS: AI casting: pending guesses keep manual choices, labelled suggestions, reserved voices and aliases, saved guesses without inference, malformed guesses refused by the library and dropped from an old browser draft, stale replies, offline fallback, deferred apply that keeps made audio until applied, settings link when off, mobile.');
+} finally {
+  await browser.close();
+  for (const app of apps) await app.close();
+}

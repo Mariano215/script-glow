@@ -1,26 +1,34 @@
-import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
+import { choose, fitsWidth, launch, openStudio, preferences, press, studio, until } from './lib.mjs';
 
-await mkdir('artifacts', { recursive: true });
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-await page.route('**/api/casting/guess-genders', route => route.fulfill({ json: { guesses: route.request().postDataJSON().names.map(name => ({ name, gender: 'unknown' })) } }));
-const errors = []; page.on('pageerror', error => errors.push(error.message));
-const requests = []; page.on('request', req => { if (req.method() === 'POST' && req.url().endsWith('/api/render')) requests.push(req.postDataJSON()); });
+// Gender-based casting and overrides, full-script and scene audio, screenplay geometry and phone fit.
 const source = 'CAST\nJORDAN - male\nPARTNER - female\nCHRIS - male\n\nACT I\nSCENE ONE\n\nPARTNER\nAre you ready to begin?\n\nJORDAN\n(quietly)\nYes. Let us take it from the top.\n\nSCENE II\n\nPARTNER\nGood. The stage is yours.\n\nCHRIS\nAre you ready to begin?';
+const app = await studio({ projects: [preferences(source, { name: 'Casting' })] });
+// A project saved before gender matching: no genders, no manual picks, and voices of the wrong type.
+const legacyPreferences = preferences(source, { name: 'Legacy', role: 'JORDAN', cast: { JORDAN: 'MyVoice', PARTNER: 'Stock-Granite', CHRIS: 'Stock-Mica' } });
+delete legacyPreferences.genders; delete legacyPreferences.manualVoices;
+const legacy = await studio({ projects: [legacyPreferences] });
+const browser = await launch();
+const saved = page => until(page, 'the project to save', () => document.querySelector('#project-save-status')?.textContent === 'Saved locally');
+const value = (page, selector) => page.evaluate(target => document.querySelector(target)?.value, selector);
+const guessRoute = route => route.fulfill({ json: { guesses: route.request().postDataJSON().names.map(name => ({ name, gender: 'unknown' })) } });
 try {
-  await page.goto('http://127.0.0.1:3001');
-  await page.locator('#file-input').setInputFiles({ name: 'Casting.fountain', mimeType: 'text/plain', buffer: Buffer.from(source) });
-  await page.waitForFunction(() => document.querySelector('#my-role')?.textContent.includes('Chris') && document.querySelector('[data-cast="CHRIS"]')?.value);
-  await page.locator('#my-role').selectOption('JORDAN');
-  assert.equal(await page.locator('[data-cast="JORDAN"]').inputValue(), 'MyVoice');
-  assert.match(await page.locator('[data-cast="PARTNER"]').inputValue(), /Stock-(Mica|Amber)/);
-  assert.match(await page.locator('[data-cast="CHRIS"]').inputValue(), /Stock-(Ash|Granite)/);
+  const page = await openStudio(browser, app.base, { hash: '#cast' });
+  await page.route('**/api/casting/guess-genders', guessRoute);
+  const requests = [];
+  page.on('request', request => { if (request.method() === 'POST' && request.url().endsWith('/api/render')) requests.push(request.postDataJSON()); });
+  await until(page, 'the cast', () => document.querySelector('#my-role')?.textContent.includes('Chris') && !!document.querySelector('[data-cast="CHRIS"]')?.value);
+  await choose(page, '#my-role', 'JORDAN');
+  assert.equal(await value(page, '[data-cast="JORDAN"]'), 'MyVoice');
+  assert.match(await value(page, '[data-cast="PARTNER"]'), /Stock-(Mica|Amber)/, 'A female part gets a female voice');
+  assert.match(await value(page, '[data-cast="CHRIS"]'), /Stock-(Ash|Granite)/, 'A male part gets a male voice');
   assert.match(await page.locator('[data-gender="PARTNER"] option:checked').innerText(), /female/);
-  await page.locator('[data-cast="PARTNER"]').selectOption('Stock-Mica');
-  await page.locator('[data-action="scope-script"]').click();
-  assert.equal(await page.locator('.script-scene-heading').count(), 2);
+  await choose(page, '[data-cast="PARTNER"]', 'Stock-Mica');
+
+  // Desktop keeps the letter page: Courier 12pt and standard margins, parenthetical under the cue.
+  await page.evaluate(() => { location.hash = '#rehearsal'; });
+  await press(page, '[data-action="scope-script"]');
+  await until(page, 'the full script', () => document.querySelectorAll('.script-scene-heading').length === 2);
   const geometry = await page.locator('.script-page').evaluate(paper => {
     const box = paper.getBoundingClientRect();
     const dialogue = paper.querySelector('.dialogue');
@@ -33,46 +41,52 @@ try {
   assert.ok(Math.abs(geometry.cue - 3.7 * 96) < 1);
   assert.ok(Math.abs(geometry.dialogue - 2.5 * 96) < 1);
   assert.ok(Math.abs(geometry.parenthetical - 3.1 * 96) < 1);
-  assert.ok(geometry.parentheticalAfterCue);
+  assert.ok(geometry.parentheticalAfterCue, 'The parenthetical sits inside the speech, under the cue');
+
+  // Play makes audio for the whole script, then for one scene.
+  await saved(page);
+  await until(page, 'Play to be offered', () => document.querySelector('[data-action="play"]')?.disabled === false);
   assert.match(await page.locator('[data-action="play"]').getAttribute('aria-label'), /Make audio and play full script/);
-  await page.locator('[data-action="play"]').click();
-  await page.waitForFunction(() => document.querySelector('audio').currentTime > 0.1 && !document.querySelector('audio').paused, { timeout: 180000 });
+  await press(page, '[data-action="play"]');
+  await until(page, 'full script playback', () => document.querySelector('audio').currentTime > 0.1 && !document.querySelector('audio').paused, undefined, 180000);
   assert.equal(requests.length, 1);
   assert.equal(requests[0].scope, 'script');
   assert.equal(requests[0].scene.lines.filter(line => line.kind === 'dialogue').length, 4);
-  await page.locator('[data-action="play"]').click();
+  await press(page, '[data-action="play"]');
   assert.equal(await page.locator('a[download]').count(), 2);
-  await page.screenshot({ path: 'artifacts/casting-screenplay-desktop.png', fullPage: true });
-  await page.locator('[data-action="scene"]').first().click();
+  await press(page, '[data-action="scene"]');
+  await until(page, 'scene 1', () => document.querySelector('#scene-select')?.value === 'scene-1');
   assert.match(await page.locator('[data-action="play"]').getAttribute('aria-label'), /Make audio and play scene/);
-  await page.locator('[data-action="play"]').click();
-  await page.waitForFunction(() => document.querySelector('audio').currentTime > 0.1 && !document.querySelector('audio').paused);
+  await press(page, '[data-action="play"]');
+  await until(page, 'scene playback', () => document.querySelector('audio').currentTime > 0.1 && !document.querySelector('audio').paused, undefined, 180000);
   assert.equal(requests.length, 2);
   assert.equal(requests[1].scope, undefined);
   assert.equal(requests[1].scene.lines.filter(line => line.kind === 'dialogue').length, 2);
-  await page.locator('[data-action="play"]').click();
-  await page.reload();
-  await page.locator('a[download]').first().waitFor();
-  assert.equal(await page.locator('[data-cast="PARTNER"]').inputValue(), 'Stock-Mica');
-  await page.locator('[data-gender="PARTNER"]').selectOption('male');
-  assert.match(await page.locator('[data-cast="PARTNER"]').inputValue(), /Stock-(Ash|Granite)/);
-  assert.equal(await page.locator('a[download]').count(), 0);
+  await press(page, '[data-action="play"]');
+  await saved(page);
+  await page.reload(); await saved(page);
+  await until(page, 'restored audio', () => document.querySelectorAll('a[download]').length === 2);
+  assert.equal(await value(page, '[data-cast="PARTNER"]'), 'Stock-Mica', 'A manual pick survives a reload');
+  await choose(page, '[data-gender="PARTNER"]', 'male');
+  assert.match(await value(page, '[data-cast="PARTNER"]'), /Stock-(Ash|Granite)/, 'Changing the voice type recasts the part');
+  assert.equal(await page.locator('a[download]').count(), 0, 'A recast invalidates the audio');
+
+  // Phones reflow the page to the screen; nothing scrolls sideways.
   await page.setViewportSize({ width: 390, height: 844 });
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Only paper should scroll horizontally, not app');
-  assert.ok(await page.locator('.script-paper-scroll').evaluate(node => node.scrollWidth > node.clientWidth));
-  assert.ok(await page.locator('.cast-card').evaluate(node => node.getBoundingClientRect().width > 300), 'Mobile cast controls should use the full column');
-  await page.screenshot({ path: 'artifacts/casting-screenplay-mobile.png', fullPage: true });
-  // Existing projects created before gender matching are corrected on reload.
-  await page.evaluate(() => {
-    const saved = JSON.parse(localStorage.getItem('script-glow:v1'));
-    delete saved.genders; delete saved.manualVoices;
-    saved.cast.PARTNER = 'Stock-Granite'; saved.cast.CHRIS = 'Stock-Mica';
-    localStorage.setItem('script-glow:v1', JSON.stringify(saved));
-  });
-  await page.reload();
-  await page.waitForFunction(() => document.querySelector('[data-cast="PARTNER"]')?.value === 'Stock-Amber' || document.querySelector('[data-cast="PARTNER"]')?.value === 'Stock-Mica');
-  assert.match(await page.locator('[data-cast="CHRIS"]').inputValue(), /Stock-(Ash|Granite)/);
-  assert.equal(await page.locator('[data-cast="JORDAN"]').inputValue(), 'MyVoice');
-  assert.deepEqual(errors, []);
-  console.log('PASS: gender-based casting/overrides; script and scene Render & play; restored audio; standard Courier/margins/parentheticals; responsive app with scrollable paper.');
-} finally { await browser.close(); }
+  assert.ok(await fitsWidth(page), 'The app fits a phone');
+  assert.ok(await page.locator('.script-panel .script-paper-scroll').evaluate(node => node.scrollWidth <= node.clientWidth), 'The paper does not scroll sideways on a phone');
+  assert.ok(await page.locator('.script-page').evaluate(node => node.getBoundingClientRect().width < 390), 'The page reflows to the screen');
+  await page.evaluate(() => { location.hash = '#cast'; });
+  await until(page, 'the cast screen', () => document.querySelector('.cast-card')?.offsetParent !== null);
+  assert.ok(await fitsWidth(page), 'The cast screen fits a phone');
+  assert.ok(await page.locator('.cast-card').evaluate(node => node.getBoundingClientRect().width > 300), 'Phone cast controls use the full column');
+  assert.deepEqual(page.errors, []);
+
+  // An older project is recast by voice type when it opens.
+  const old = await openStudio(browser, legacy.base, { hash: '#cast' });
+  await until(old, 'the legacy cast to be corrected', () => ['Stock-Amber', 'Stock-Mica'].includes(document.querySelector('[data-cast="PARTNER"]')?.value));
+  assert.match(await value(old, '[data-cast="CHRIS"]'), /Stock-(Ash|Granite)/);
+  assert.equal(await value(old, '[data-cast="JORDAN"]'), 'MyVoice');
+  assert.deepEqual(old.errors, []);
+  console.log('PASS: gender-based casting and overrides; full-script and scene Make audio and play; restored audio; recast invalidates; Courier 12pt with standard margins and parentheticals; phone reflows without sideways scrolling; older projects are recast by voice type.');
+} finally { await browser.close(); await app.close(); await legacy.close(); }

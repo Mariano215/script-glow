@@ -10,3 +10,12 @@ graphify-out/
 voice-server/voices/
 voice-server/.venv/
 __pycache__/
+.env.*
+secrets.json
+*.sgbackup
+*.tmp
+.DS_Store
+Thumbs.db
+# Planning notes and work logs: kept on this computer, not published.
+docs/internal/
+.vscode/

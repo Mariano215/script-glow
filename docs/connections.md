@@ -1,25 +1,63 @@
-# Local connection profile — preserve the existing installation
+# Connection profile and keys
 
-Goal: keep this installation usable with existing Chatterbox, WhisperX and Ollama services while removing personal endpoint/model/voice defaults from distributable runtime code.
+Script Glow keeps two kinds of settings apart:
 
-This increment is file-based connection configuration, not the full public setup wizard or in-app voice recorder. No cloud API keys, Docker migration, new models, or inference service changes.
+| File | Holds | Safe to copy to another computer |
+| --- | --- | --- |
+| `data/connections.json` (or `SCRIPT_GLOW_CONFIG`) | Which engines to use, server addresses, your own voice name | Yes. It never holds a key. |
+| Key file in your user settings folder (or `SCRIPT_GLOW_SECRETS`) | API keys and the voice server token | No |
 
-Architecture: `server/connections.js` loads/validates a bounded version-1 JSON profile from `SCRIPT_GLOW_CONFIG` or ignored `data/connections.json`. Missing file uses generic loopback URLs and no preferred actor voice/model. Explicit malformed config fails startup visibly, never silently selects another host. `server/index.js` injects profile into app; app injects selected Ollama URL/model into casting AI and uses configured TTS/STT URLs. `GET /api/connections` is read-only and exposes non-secret effective configuration and adapter names. Profile files are not included in project backups.
+The key file is at:
 
-The original installation keeps its private remote services, installed Ollama model, preferred actor voice and alias in its ignored local profile. Generic builds have no personal voice preference/alias. Actor casting and used-voice detection use the configured preferred voice/aliases. Existing saved cast selections are preserved. Move the personal preview WAV into ignored `data/voice-previews/`; serve it only for the owner-configured voice. Generic builds do not bundle this sample.
+| System | Path |
+| --- | --- |
+| Windows | `%APPDATA%\script-glow\secrets.json` |
+| macOS and Linux | `~/.config/script-glow/secrets.json` (or `$XDG_CONFIG_HOME/script-glow/secrets.json`) |
 
-Safety: local config is operator-authored, never taken from script/model data. Only HTTP(S) URLs without credentials/query/fragment; no API to mutate endpoints yet. No secrets accepted in config. Local Host/Origin guards and bounded fetches remain. Profiles loaded once at startup avoid mid-render engine switches. TTS line-cache identity includes a configurable namespace; this installation uses explicit legacy cache mode to retain existing cached lines, new profiles get isolated cache keys. Durable saved WAVs are unchanged.
+On macOS and Linux the folder is set to owner-only (`0700`) and the file to `0600`. On Windows, your user folder is private to your account by default.
 
-Files: server/connections.js, server/index.js, server/app.js, server/casting-ai.js, src/casting.ts, src/main.ts, src/voice-catalog.ts, tests/connections.test.js and casting fixtures; connections.example.json and ignored personal config. Commands: `npm test`; `npm run build`; isolated browser project/actor-voice tests; real configured health/voices/Ollama tags checks; read-only inventory before/after restart. Success: live personal services work, preferred actor voice retained, generic empty preference has no personal default, projects/renders unchanged, personal preview not distributed.
+## The Settings screen
 
-Own-voice direction for the public product: users record or upload their own reference, trim/check quality, preview a test sentence, and register through a documented supported Chatterbox adapter. Include an ownership/permission confirmation. Keep reference samples private by default, with explicit export choices. Manual server-specific setup instructions are the fallback. This recorder/registration flow is not implemented in this increment.
+**Settings** writes the profile for you. A change applies as soon as you press **Save changes**; no restart is needed. It cannot be saved while audio is being made, so a scene never mixes two engines.
 
-## Operator setup
+Keys are added one at a time under **Keys for paid services** with **Save key**. The browser never gets a key back: it sees only whether one is set and its first 3 and last 4 characters. **Test the key** uses the saved key, so save it first.
 
-Copy `connections.example.json` to ignored `data/connections.json`, edit service URLs and the name of an already installed Ollama model, then restart Script Glow. Alternatively, set `SCRIPT_GLOW_CONFIG` to an operator-managed JSON file before startup. An explicitly selected missing profile, invalid JSON, unknown fields, unsupported URL schemes, embedded credentials, and profiles larger than 16 KB stop startup. There is no browser endpoint for modifying configuration or storing API keys yet.
+## Editing the file by hand
 
-Set `casting.preferredActorVoice` to an existing voice ID returned by the connected Chatterbox service. `casting.aliases` maps alternate IDs directly to canonical IDs; alias chains are rejected. The optional local preview is exactly `data/voice-previews/actor-preview.wav`. When both the preferred voice and this file exist, `/api/connections` includes `casting.previewUrl: "/private-voice-preview.wav"`. No client-supplied filesystem path is accepted. This route uses the app's loopback Host/Origin restrictions and `Cache-Control: private, no-store`; “private” means installation-local, not per-user authentication. Do not expose this unauthenticated desktop service to a network.
+Copy `connections.example.json` to `data/connections.json`, edit it, and restart Script Glow. A missing file means the defaults (every service on `127.0.0.1`). When `SCRIPT_GLOW_CONFIG` names a file, that file must exist, and Settings saves back to it.
 
-The installed adapter contracts are `named-voice-wav-v1` (Chatterbox named voices and WAV synthesis), `multipart-transcriptions-v1` (WhisperX service compatibility; currently health-checked only), and `generate-v1` (Ollama structured inference). Other Chatterbox wrappers may require a future adapter. An empty model disables AI suggestions with an actionable error; manual casting remains available. No model is downloaded automatically.
+Startup stops with an error when the profile:
 
-Verification: `node --test tests/connections.test.js tests/casting-ai.test.js tests/backend.test.js` passed 26 tests. Coverage includes generic defaults, malformed/secret config rejection, bounded file loading, URL/model injection, fixed private-preview access, origin guards, explicit unconfigured-AI failure, legacy cache reuse, and cache namespace/URL isolation. Official API references: [Node 24 filesystem](https://nodejs.org/docs/latest-v24.x/api/fs.html) and [Express 5 response API](https://expressjs.com/en/5x/api/).
+- is larger than 16 KB, or is not valid JSON,
+- has a field Script Glow does not know,
+- has a URL that is not HTTP(S), or that has a user name, password, query or fragment,
+- has a model name that looks like an API key.
+
+Every field is described in the [README](../README.md#configure).
+
+## Your own voice
+
+**Settings > Your voice > Record my voice** records about 20 seconds, sends the recording to your Chatterbox server with `PUT /v1/voices/<name>`, keeps a private copy in `data/voice-previews/actor-preview.wav`, and sets `casting.preferredActorVoice`. Lines made with an earlier recording are made again, because the cache key includes the recording's date.
+
+To do it by hand, save a WAV as `voices/<Name>.wav` on the voice server, put `<Name>` in `casting.preferredActorVoice`, and optionally copy the same WAV to `data/voice-previews/actor-preview.wav`.
+
+`casting.aliases` maps other voice IDs to one canonical ID (no chains), so two names for the same recording count as one voice when casting.
+
+## A voice server on another computer
+
+Start the server there with a token (see [voice-server/README.md](../voice-server/README.md)). In Script Glow:
+
+1. **Settings > Advanced > Chatterbox server**: its address, for example `http://gpu-desktop:8095`.
+2. **Keys for paid services > Voice server token**: the same token.
+
+Script Glow sends the token as `X-Voice-Token` on every call to that server. The token is kept in the key file, not in the profile.
+
+## What each service is used for
+
+| Service | Contract | Used for |
+| --- | --- | --- |
+| Chatterbox | `GET /health`, `GET /v1/voices`, `POST /v1/tts` (WAV out), `PUT /v1/voices/<name>` | Voicing lines, your own voice |
+| Ollama | `GET /api/tags`, `POST /api/generate` | Guessing voice types from character names (optional) |
+| WhisperX | `GET /health` | Health check and verification scripts only |
+
+Script Glow never downloads a model. An empty Ollama model turns AI suggestions off; you can still choose every voice type by hand.

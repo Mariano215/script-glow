@@ -1,13 +1,25 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { mkdir, readFile, readdir, lstat, open, rename, copyFile, unlink, rmdir } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { mkdir, readFile, readdir, lstat, open, copyFile, unlink, rmdir } from 'node:fs/promises';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import { makeMp4 } from './video.js';
+import { renameRetry } from './connections.js';
 
 export const PROJECT_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const AUDIO_NAME = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-(full|practice)\.wav$/;
 const MAX_META = 32 * 1024 * 1024;
 export const MAX_BACKUP = 4 * 1024 ** 3;
+// A take is the actor's own recording. The name on disk is generated here, never taken from the
+// browser, and the container must be one the page can actually produce.
+const TAKE_NAME = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.(webm|mp4)$/;
+export const TAKE_TYPES = { 'video/webm': 'webm', 'video/mp4': 'mp4' };
+export const MAX_TAKE = 512 * 1024 * 1024;
+export const MAX_TAKES = 50;
+// A slate is recorded on its own, as casting sites ask; everything else is a scene take.
+export const TAKE_KINDS = ['scene', 'slate'];
 const MAGIC = Buffer.from('SGLOWB01');
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 const text = (value, max, empty = false) => typeof value === 'string' && value.length <= max && (empty || value.trim().length > 0);
@@ -21,13 +33,20 @@ function map(value, valid) {
 export function validatePreferences(value) {
   if (!object(value) || !text(value.source, 500000, true) || !text(value.name, 300) || !text(value.role, 100, true) || !text(value.sceneId, 100, true)) throw fail('Invalid project script or name.');
   if (!number(value.gap, 0, 5) || ![0.75, 1, 1.25, 1.5].includes(value.rate) || !['full', 'practice'].includes(value.mode) || ['directions', 'hide', 'follow', 'loop'].some(key => typeof value[key] !== 'boolean')) throw fail('Invalid project rehearsal settings.');
+  for (const key of ['listen', 'hint', 'wait', 'build']) if (value[key] !== undefined && typeof value[key] !== 'boolean') throw fail('Invalid project rehearsal settings.');
+  for (const key of ['loopA', 'loopB']) if (value[key] !== undefined && !text(value[key], 100, true)) throw fail('Invalid project rehearsal settings.');
+  if (value.buildRepeats !== undefined && !(Number.isInteger(value.buildRepeats) && number(value.buildRepeats, 1, 10))) throw fail('Invalid project rehearsal settings.');
+  if (value.tapeOverlay !== undefined && typeof value.tapeOverlay !== 'boolean') throw fail('Invalid project rehearsal settings.');
+  if (value.readerLevel !== undefined && !number(value.readerLevel, 0, 1.5)) throw fail('Invalid reader volume.');
+  for (const key of ['tapeX', 'tapeY']) if (value[key] !== undefined && !number(value[key], 0, 100)) throw fail('Invalid script position.');
+  for (const key of ['tapeW', 'tapeH']) if (value[key] !== undefined && !number(value[key], 0, 2000)) throw fail('Invalid script size.');
   if (value.highlightCharacter !== undefined && !text(value.highlightCharacter, 100, true)) throw fail('Invalid highlighted character.');
   for (const key of ['characterColor', 'spokenColor']) if (value[key] !== undefined && (typeof value[key] !== 'string' || !/^#[0-9a-f]{6}$/i.test(value[key]))) throw fail('Invalid highlight color.');
   return { source: value.source, name: value.name, role: value.role,
     highlightCharacter: value.highlightCharacter ?? '@role', characterColor: (value.characterColor ?? '#60a5fa').toLowerCase(), spokenColor: (value.spokenColor ?? '#f2b544').toLowerCase(),
     cast: map(value.cast, item => text(item, 100, true)), guesses: map(value.guesses ?? {}, item => ['male', 'female', 'unknown'].includes(item)),
     genders: map(value.genders ?? {}, item => ['auto', 'male', 'female', 'unknown'].includes(item)), manualVoices: map(value.manualVoices ?? {}, item => typeof item === 'boolean'),
-    sceneId: value.sceneId, gap: value.gap, directions: value.directions, hide: value.hide, follow: value.follow, loop: value.loop, rate: value.rate, mode: value.mode };
+    sceneId: value.sceneId, gap: value.gap, directions: value.directions, hide: value.hide, listen: value.listen ?? false, hint: value.hint ?? false, wait: value.wait ?? false, build: value.build ?? false, buildRepeats: value.buildRepeats ?? 2, loopA: value.loopA ?? '', loopB: value.loopB ?? '', readerLevel: value.readerLevel ?? 1, tapeOverlay: value.tapeOverlay ?? false, tapeX: value.tapeX ?? 50, tapeY: value.tapeY ?? 78, tapeW: value.tapeW ?? 0, tapeH: value.tapeH ?? 0, follow: value.follow, loop: value.loop, rate: value.rate, mode: value.mode };
 }
 function keyInput(key) {
   if (!text(key, 1200000)) throw fail('Invalid render compatibility key.');
@@ -88,9 +107,9 @@ async function atomicJSON(filename, value, preserve = false) {
     try { await file.writeFile(bytes); await file.sync(); } finally { await file.close(); }
     if (preserve) {
       const previous = `${filename}.previous.${randomUUID()}.tmp`;
-      try { await copyFile(filename, previous); await rename(previous, `${filename}.previous`); } catch (error) { await unlink(previous).catch(() => {}); if (error.code !== 'ENOENT') throw error; }
+      try { await copyFile(filename, previous); await renameRetry(previous, `${filename}.previous`); } catch (error) { await unlink(previous).catch(() => {}); if (error.code !== 'ENOENT') throw error; }
     }
-    await rename(temporary, filename);
+    await renameRetry(temporary, filename);
   } finally { await unlink(temporary).catch(() => {}); }
 }
 
@@ -193,7 +212,8 @@ export function createProjectStore(root, cacheDir, { maxRenders = 200, renderBud
   }
   async function audioPath(project, filename) {
     if (!AUDIO_NAME.test(filename)) throw fail('Project audio not found.', 404);
-    const document = await read(project);
+    // Read under the lock, so an autosave is not replacing project.json at the same moment.
+    const document = await locked(id(project), () => read(project));
     const entry = document.renders.find(item => audioNames(project, item.result).includes(filename));
     if (!entry) throw fail('Project audio not found.', 404);
     const target = path.join(directory(project), filename); try { await wavInfo(target, entry.result.duration); } catch { throw fail('Saved audio is missing or invalid. Render the scene again.', 404); } return target;
@@ -278,7 +298,7 @@ export function createProjectStore(root, cacheDir, { maxRenders = 200, renderBud
       const old = document.id; document.id = project; document.revision = 1; document.createdAt = document.updatedAt = new Date().toISOString();
       for (const entry of document.renders) { entry.result.fullUrl = entry.result.fullUrl.replace(`/api/projects/${old}/`, `/api/projects/${project}/`); entry.result.practiceUrl = entry.result.practiceUrl.replace(`/api/projects/${old}/`, `/api/projects/${project}/`); }
       await atomicJSON(path.join(staging, 'project.json'), document); owned.push(path.join(staging, 'project.json'));
-      await locked('$library', async () => { await capacity(); await rename(staging, directory(project)); }); owned.length = 0; staging = undefined;
+      await locked('$library', async () => { await capacity(); await renameRetry(staging, directory(project)); }); owned.length = 0; staging = undefined;
       return publicDocument(document);
     } finally {
       for (const filename of owned) await unlink(filename).catch(() => {});
@@ -286,5 +306,120 @@ export function createProjectStore(root, cacheDir, { maxRenders = 200, renderBud
       restoring = false;
     }
   }
-  return { create, get, list, update, attach, audioPath, backup, backupInfo, restore };
+  const takesDir = project => path.join(directory(project), 'takes');
+  const takeIndex = project => path.join(takesDir(project), 'index.json');
+  // A damaged or hand-edited index must not hide the takes that are still readable.
+  async function readTakes(project) {
+    try {
+      const saved = JSON.parse(await readFile(takeIndex(project), 'utf8'));
+      if (!Array.isArray(saved)) return [];
+      return saved.filter(entry => object(entry) && typeof entry.file === 'string' && TAKE_NAME.test(entry.file) && text(entry.label, 100, true));
+    } catch { return []; }
+  }
+  async function takes(project) {
+    await read(project);
+    const listed = [];
+    for (const entry of await readTakes(project)) {
+      // A take deleted outside the app stops being offered instead of failing the whole list.
+      try { const info = await regular(path.join(takesDir(project), entry.file)); listed.push({ ...entry, bytes: info.size }); } catch { /* skip */ }
+    }
+    return listed;
+  }
+  async function addTake(project, source, { type, sceneId = '', label = '', ms = 0, kind = 'scene' } = {}) {
+    const extension = TAKE_TYPES[type];
+    if (!TAKE_KINDS.includes(kind)) throw fail('Invalid take kind.', 400);
+    if (!extension) throw fail('A take must be recorded as video/webm or video/mp4.', 415);
+    if (!text(label, 100, true) || !text(sceneId, 100, true)) throw fail('Invalid take details.', 400);
+    return locked(id(project), async () => {
+      await read(project);
+      const existing = await readTakes(project);
+      if (existing.length >= MAX_TAKES) throw fail(`This project already holds ${MAX_TAKES} takes. Delete one before recording another.`, 409);
+      await mkdir(takesDir(project), { recursive: true });
+      const file = `${randomUUID()}.${extension}`;
+      const temporary = path.join(takesDir(project), `${randomUUID()}.tmp`);
+      let bytes = 0;
+      try {
+        await pipeline(source, new Transform({ transform(chunk, encoding, done) {
+          bytes += chunk.length;
+          done(bytes > MAX_TAKE ? fail('Take exceeds the 512 MiB limit. Nothing was saved.', 413) : null, chunk);
+        } }), createWriteStream(temporary));
+        if (!bytes) throw fail('The take was empty and has not been saved.', 400);
+        await renameRetry(temporary, path.join(takesDir(project), file));
+      } catch (error) { await unlink(temporary).catch(() => {}); throw error; }
+      const entry = { file, kind, label: label || (kind === 'slate' ? 'Slate' : `Take ${existing.length + 1}`), sceneId, ms: Number.isFinite(ms) && ms > 0 ? Math.round(ms) : 0, created: new Date().toISOString(), bytes };
+      await atomicJSON(takeIndex(project), [...existing, entry]);
+      return entry;
+    });
+  }
+  async function takePath(project, file) {
+    if (!TAKE_NAME.test(file)) throw fail('Take not found.', 404);
+    const entry = (await readTakes(project)).find(item => item.file === file);
+    if (!entry) throw fail('Take not found.', 404);
+    const target = path.join(takesDir(project), file);
+    try { await regular(target); } catch { throw fail('Take file is missing.', 404); }
+    return { path: target, entry };
+  }
+  async function renameTake(project, file, label) {
+    if (!text(label, 100)) throw fail('A take needs a name of up to 100 characters.', 400);
+    return locked(id(project), async () => {
+      const entries = await readTakes(project);
+      if (!TAKE_NAME.test(file) || !entries.some(item => item.file === file)) throw fail('Take not found.', 404);
+      const updated = entries.map(item => item.file === file ? { ...item, label } : item);
+      await atomicJSON(takeIndex(project), updated);
+      return updated.find(item => item.file === file);
+    });
+  }
+  // A finished copy: trimmed and converted to MP4, saved as a new take beside the original, which is
+  // never changed. The conversion runs outside the project lock, so autosave carries on meanwhile.
+  async function exportTake(project, file, { start = 0, end = 0 } = {}) {
+    const { entry } = await takePath(project, file);
+    const seconds = entry.ms / 1000;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < 0 || (end && end <= start) || (seconds && (start > seconds || end > seconds + 1))) throw fail('Choose a start before the end, inside the take.', 400);
+    const existing = await readTakes(project);
+    if (existing.length >= MAX_TAKES) throw fail(`This project already holds ${MAX_TAKES} takes. Delete one first.`, 409);
+    const output = `${randomUUID()}.mp4`;
+    const temporary = `${output}.part.mp4`;
+    const dir = takesDir(project);
+    try {
+      await makeMp4({ cwd: dir, input: file, output: temporary, start, length: end ? end - start : 0 });
+      const info = await regular(path.join(dir, temporary));
+      if (!info.size) throw fail('The converted file was empty.', 502);
+      if (info.size > MAX_TAKE) throw fail('The converted take is larger than 512 MiB.', 413);
+      await renameRetry(path.join(dir, temporary), path.join(dir, output));
+    } catch (error) { await unlink(path.join(dir, temporary)).catch(() => {}); if (error.status) throw error; if (error.detail) console.error('FFmpeg:', error.detail); throw fail(`${error.message} The details are in the terminal.`, 502); }
+    return locked(id(project), async () => {
+      const entries = await readTakes(project);
+      // Two exports can pass the first check together, so the limit is checked again here.
+      if (entries.length >= MAX_TAKES) { await unlink(path.join(dir, output)).catch(() => {}); throw fail(`This project already holds ${MAX_TAKES} takes. Delete one first.`, 409); }
+      const length = (end || seconds) - start;
+      const trimmed = start > 0 || (end && end < seconds);
+      const added = { file: output, kind: entry.kind ?? 'scene', label: `${entry.label}${trimmed ? ' (trimmed)' : ''} MP4`.slice(0, 100), sceneId: entry.sceneId, ms: Math.max(0, Math.round(length * 1000)), created: new Date().toISOString(), bytes: (await regular(path.join(dir, output))).size, from: file };
+      await atomicJSON(takeIndex(project), [...entries, added]);
+      return added;
+    });
+  }
+  // Removing a take touches the take index and that one file. Renders and the manifest are not read.
+  async function deleteTake(project, file) {
+    return locked(id(project), async () => {
+      const entries = await readTakes(project);
+      if (!TAKE_NAME.test(file) || !entries.some(item => item.file === file)) throw fail('Take not found.', 404);
+      await atomicJSON(takeIndex(project), entries.filter(item => item.file !== file));
+      await unlink(path.join(takesDir(project), file)).catch(() => {});
+      return { removed: file };
+    });
+  }
+  // Deleting moves the whole project (script, audio, takes) into .trash, so a mistake can be undone
+  // by moving the folder back. Nothing is erased.
+  async function remove(project) {
+    return locked('$library', () => locked(id(project), async () => {
+      if (exporting || restoring) throw fail('A backup is being made or restored. Try again when it finishes.', 409);
+      await read(project);
+      const bin = path.join(root, '.trash');
+      await mkdir(bin, { recursive: true });
+      const target = path.join(bin, `${id(project)}-${Date.now()}`);
+      await renameRetry(directory(project), target);
+      return { removed: id(project), keptIn: path.relative(root, target) };
+    }));
+  }
+  return { create, get, list, update, remove, attach, audioPath, backup, backupInfo, restore, takes, addTake, takePath, renameTake, deleteTake, exportTake };
 }

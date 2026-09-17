@@ -4,12 +4,36 @@
 
 Script Glow is a single-user app that runs on your own computer. It has no accounts or passwords.
 
-- The app listens on `127.0.0.1` only and rejects requests from other sites and hosts.
-- The voice server also listens on `127.0.0.1` by default.
-- Scripts, recordings, and backups stay on your disk. They go only to the voice and AI services you configure.
+- The app listens on `127.0.0.1` only. It refuses requests addressed to any other host name or sent from another site, and it cannot be shown inside another page.
+- Every change sent from the browser must carry a secret that is made new each time the app starts.
 - Imported scripts and backups are treated as untrusted: sizes are limited, text is escaped, and PDFs are read in a separate process with memory and time limits.
 
-Do not expose either server to a network. There is no login to protect it.
+## Keys
+
+- API keys and the voice server token are kept in your user settings folder: `%APPDATA%\script-glow\secrets.json` on Windows, `~/.config/script-glow/secrets.json` on macOS and Linux. On macOS and Linux the file is `0600` and its folder `0700`.
+- A key is never sent back to the browser, never written to `data/connections.json`, never put in a project backup, and never shown in an error message.
+- Each key is sent only to its own provider, in a request header, and never follows a redirect.
+
+## What leaves your computer
+
+| You choose | What is sent | To whom |
+| --- | --- | --- |
+| Chatterbox on this computer, Ollama on this computer | Nothing | |
+| A hosted voice engine (ElevenLabs, OpenAI, Google Gemini) | The text of each line when new audio is made | That company |
+| A hosted engine for name guesses (OpenAI, Claude, Gemini, Grok, OpenRouter) | Character names only | That company |
+| A Chatterbox or Ollama server on another computer | Lines, names, and your voice recording | That computer |
+
+Your script file, your settings and your self-tapes are never sent to any of them.
+
+## The voice server
+
+The voice server in `voice-server/` listens on `127.0.0.1` and answers only requests addressed to this computer, so a web page cannot reach it by pointing its own domain at `127.0.0.1`.
+
+To use it from another computer, set `VOICE_HOST`, `VOICE_ALLOWED_HOSTS` and `VOICE_TOKEN`. It will not start on a network address without a token of 20 or more characters, and it then refuses every request without that token (except `/health`). New voices are refused on a network address unless `VOICE_UPLOADS=on`. Anyone with the token can make speech in any installed voice, including yours, so keep it private and use a private network.
+
+## Files on disk
+
+`data/` holds your projects, self-tapes and your voice recording. On macOS and Linux your voice recording is owner-only. On Windows, files in `data/` get the permissions of the folder you cloned Script Glow into; clone it inside your user folder if other people use this computer.
 
 ## Reporting a vulnerability
 

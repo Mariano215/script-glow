@@ -1,98 +1,101 @@
-import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
 import { voiceCatalog } from '../src/voice-catalog.ts';
-import { encodeWav } from '../server/audio.js';
+import { choose, fitsWidth, launch, openStudio, preferences, press, studio, until } from './lib.mjs';
 
-await mkdir('artifacts', { recursive: true });
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-await page.route('**/api/casting/guess-genders', route => route.fulfill({ json: { guesses: route.request().postDataJSON().names.map(name => ({ name, gender: 'unknown' })) } }));
-const errors = []; page.on('pageerror', error => errors.push(error.message));
-let renders = 0, input;
-const sample = encodeWav(Buffer.alloc(48000 * 10));
-const fulfillAudio = route => {
-  const range = route.request().headers().range?.match(/^bytes=(\d+)-(\d*)$/);
-  if (!range) return route.fulfill({ contentType: 'audio/wav', body: sample });
-  const start = Number(range[1]), end = range[2] ? Math.min(Number(range[2]), sample.length - 1) : sample.length - 1;
-  return route.fulfill({ status: 206, contentType: 'audio/wav', headers: { 'Accept-Ranges': 'bytes', 'Content-Range': `bytes ${start}-${end}/${sample.length}` }, body: sample.subarray(start, end + 1) });
-};
-await page.route('**/api/health', route => route.fulfill({ json: { tts: { ok: true } } }));
-await page.route('**/api/voices', route => route.fulfill({ json: { voices: [...Object.keys(voiceCatalog), 'Unknown-Voice'] } }));
-await page.route('**/api/render', route => { renders++; input = route.request().postDataJSON(); return route.fulfill({ status: 202, json: { jobId: 'preview-fixture' } }); });
-await page.route('**/api/jobs/preview-fixture', route => route.fulfill({ json: { id: 'preview-fixture', status: 'complete', completed: 2, total: 2, result: { fullUrl: '/audio/preview-fixture-full.wav', practiceUrl: '/audio/preview-fixture-practice.wav', duration: 10, cues: input.scene.lines.filter(line => line.kind === 'dialogue').map((line, i) => ({ lineId: line.id, character: line.character, start: i * 3, end: i * 3 + 2 })) } } }));
-await page.route('**/audio/preview-fixture-*.wav', fulfillAudio);
+// The whole catalogue plus one voice it does not describe. Scene audio comes from the fake voice
+// service; the preview WAVs are the real files the app ships.
+const source = 'SCENE 1\nJORDAN: Hello.\nPARTNER: Welcome.\n\nSCENE 2\nJORDAN: Ready.';
+const voices = ['MyVoice', ...Object.keys(voiceCatalog), 'Unknown-Voice'];
+const app = await studio({ projects: [preferences(source, { name: 'Voices', role: 'JORDAN' })], voices, lineSeconds: 5 });
+const browser = await launch();
+const preview = '[data-action="voice-preview"][data-character="PARTNER"]';
+const value = (page, selector) => page.evaluate(target => document.querySelector(target)?.value, selector);
+const description = page => page.evaluate(() => document.querySelector('[data-cast="PARTNER"]').parentElement.querySelector('.voice-description')?.textContent ?? null);
+const fullLink = page => page.evaluate(() => document.querySelector('.downloads a[download]')?.getAttribute('href') ?? null);
+const previewing = page => page.evaluate(() => !!document.querySelector('#voice-preview-audio'));
+const tts = () => app.calls.filter(call => call.url.endsWith('/v1/tts')).length;
 try {
-  await page.goto('http://127.0.0.1:3001');
-  const source = 'SCENE 1\nJORDAN: Hello.\nPARTNER: Welcome.\n\nSCENE 2\nJORDAN: Ready.';
-  await page.locator('#file-input').setInputFiles({ name: 'Voices.txt', mimeType: 'text/plain', buffer: Buffer.from(source) });
-  await page.waitForFunction(() => document.querySelector('[data-cast="PARTNER"]')?.value);
-  await page.locator('#my-role').selectOption('JORDAN');
-  assert.equal(await page.locator('[data-cast="JORDAN"]').inputValue(), 'MyVoice');
-  for (const id of Object.keys(voiceCatalog).filter(id => id.startsWith('VoiceZero-') || /Stock-(Slate|Quartz)/.test(id))) {
-    assert.equal(await page.locator(`[data-cast="PARTNER"] option[value="${id}"]`).count(), 1);
-    assert.ok(voiceCatalog[id].previewUrl, `${id}: preview published`);
-    const response = await page.request.get(`http://127.0.0.1:3001${voiceCatalog[id].previewUrl}`);
-    assert.equal(response.status(), 200, `${id}: served preview`);
-    assert.match(response.headers()['content-type'], /audio/);
-    assert.equal((await response.body()).toString('ascii', 0, 4), 'RIFF');
+  const page = await openStudio(browser, app.base, { hash: '#cast' });
+  await until(page, 'the partner voice', () => !!document.querySelector('[data-cast="PARTNER"]')?.value);
+  assert.equal(await value(page, '[data-cast="JORDAN"]'), 'MyVoice');
+  const added = Object.keys(voiceCatalog).filter(id => id.startsWith('VoiceZero-') || /Stock-(Slate|Quartz)/.test(id));
+  assert.equal(added.length, 12);
+  for (const id of Object.keys(voiceCatalog)) {
+    const option = await page.evaluate(voice => document.querySelector(`[data-cast="PARTNER"] option[value="${voice}"]`)?.textContent ?? '', id);
+    const { label, gender, accent, previewUrl } = voiceCatalog[id];
+    assert.ok(option.includes(label) && option.includes(gender) && option.includes(accent), `${id}: listed with label, gender and accent (${option})`);
+    assert.ok(previewUrl, `${id}: preview published`);
+    const response = await fetch(`${app.base}${previewUrl}`);
+    assert.equal(response.status, 200, `${id}: served preview`);
+    assert.match(response.headers.get('content-type'), /audio/);
+    assert.equal(Buffer.from(await response.arrayBuffer()).toString('ascii', 0, 4), 'RIFF');
   }
-  await page.locator('[data-cast="PARTNER"]').selectOption('Stock-Slate');
-  assert.match(await page.locator('[data-cast="PARTNER"]').locator('..').locator('.voice-description').innerText(), /American|US/i);
-  await page.locator('[data-action="render"]').click();
-  await page.locator('a[download]').first().waitFor();
-  await page.locator('[data-action="play"]').click();
-  await page.waitForFunction(() => document.querySelector('#scene-audio').currentTime > 0.1);
-  const saved = await page.locator('a[download]').first().getAttribute('href');
-  const cast = await page.locator('[data-cast="PARTNER"]').inputValue();
-  await page.getByRole('button', { name: 'Preview voice for PARTNER', exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('#voice-preview-audio')?.currentTime > 0.1);
-  assert.ok(await page.locator('#scene-audio').evaluate(audio => audio.paused));
-  assert.equal(await page.locator('a[download]').first().getAttribute('href'), saved);
-  assert.equal(await page.locator('[data-cast="PARTNER"]').inputValue(), cast);
-  assert.equal(renders, 1, 'Preview must not render script');
-  await page.getByRole('button', { name: 'Stop voice for PARTNER', exact: true }).click();
-  assert.equal(await page.locator('#voice-preview-audio').count(), 0);
-  await page.getByRole('button', { name: 'Preview voice for PARTNER', exact: true }).click();
-  await page.locator('[data-action="play"]').click();
-  await page.waitForFunction(() => !document.querySelector('#scene-audio').paused);
-  assert.equal(await page.locator('#voice-preview-audio').count(), 0, 'Rehearsal stops preview');
-  await page.locator('[data-action="play"]').click();
-  await page.getByRole('button', { name: 'Preview voice for PARTNER', exact: true }).click();
-  await page.locator('#scene-select').selectOption('scene-2');
-  assert.equal(await page.locator('#voice-preview-audio').count(), 0, 'Scene change stops preview');
-  await page.locator('#scene-select').selectOption('scene-1');
-  assert.equal(await page.locator('a[download]').first().getAttribute('href'), saved);
-  await page.locator('[data-cast="PARTNER"]').selectOption('VoiceZero-Alana');
-  assert.match(await page.locator('[data-cast="PARTNER"]').locator('..').locator('.voice-description').innerText(), /Midwest/i);
-  await page.getByRole('button', { name: 'Preview voice for PARTNER', exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('#voice-preview-audio')?.currentTime > 0.1);
-  await page.locator('#voice-preview-audio').evaluate(audio => { audio.currentTime = audio.duration - 0.05; });
-  await page.waitForFunction(() => !document.querySelector('#voice-preview-audio'));
+
+  await choose(page, '[data-cast="PARTNER"]', 'Stock-Slate');
+  await until(page, 'Slate to be cast', () => document.querySelector('[data-cast="PARTNER"]')?.value === 'Stock-Slate');
+  assert.match(await description(page), /American|US/i);
+  await press(page, '[data-action="render"]');
+  await until(page, 'the scene audio', () => !!document.querySelector('.downloads a[download]'));
+  const made = tts();
+  await press(page, '[data-action="play"]');
+  await until(page, 'the scene to play', () => document.querySelector('#scene-audio').currentTime > 0.1);
+  const saved = await fullLink(page);
+  await press(page, preview);
+  await until(page, 'the preview to play', () => document.querySelector('#voice-preview-audio')?.currentTime > 0.1);
+  assert.ok(await page.evaluate(() => document.querySelector('#scene-audio').paused), 'Preview pauses the scene');
+  assert.equal(await fullLink(page), saved);
+  assert.equal(await value(page, '[data-cast="PARTNER"]'), 'Stock-Slate');
+  assert.equal(tts(), made, 'Preview must not make scene audio');
+  assert.equal(await page.evaluate(selector => document.querySelector(selector).getAttribute('aria-label'), preview), 'Stop voice for PARTNER');
+  await press(page, preview);
+  assert.equal(await previewing(page), false, 'Stop removes the preview');
+
+  await press(page, preview);
+  await press(page, '[data-action="play"]');
+  await until(page, 'the scene to resume', () => !document.querySelector('#scene-audio').paused);
+  assert.equal(await previewing(page), false, 'Rehearsal stops preview');
+  await press(page, '[data-action="play"]');
+  await press(page, preview);
+  await choose(page, '#scene-select', 'scene-2');
+  assert.equal(await previewing(page), false, 'Scene change stops preview');
+  await choose(page, '#scene-select', 'scene-1');
+  await until(page, 'scene 1 audio again', href => document.querySelector('.downloads a[download]')?.getAttribute('href') === href, saved);
+
+  await choose(page, '[data-cast="PARTNER"]', 'VoiceZero-Alana');
+  await until(page, 'Alana to be cast', () => document.querySelector('[data-cast="PARTNER"]')?.value === 'VoiceZero-Alana');
+  assert.match(await description(page), /Midwest/i);
+  await press(page, preview);
+  await until(page, 'the Alana preview', () => document.querySelector('#voice-preview-audio')?.currentTime > 0.1);
+  await page.evaluate(() => { const sample = document.querySelector('#voice-preview-audio'); sample.currentTime = sample.duration - 0.05; });
+  await until(page, 'the preview to end', () => !document.querySelector('#voice-preview-audio'));
   assert.match(await page.locator('#voice-preview-status').innerText(), /finished/);
   await page.route('**/voice-previews/VoiceZero-Alana.wav', route => route.fulfill({ status: 404 }));
-  await page.getByRole('button', { name: 'Preview voice for PARTNER', exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('#voice-preview-status')?.textContent.includes('unavailable'));
+  await press(page, preview);
+  await until(page, 'the preview error', () => document.querySelector('#voice-preview-status')?.textContent.includes('unavailable'));
   await page.unroute('**/voice-previews/VoiceZero-Alana.wav');
-  await page.locator('[data-cast="PARTNER"]').selectOption('Unknown-Voice');
-  assert.ok(await page.getByRole('button', { name: 'Preview voice for PARTNER', exact: true }).isDisabled());
-  assert.equal(await page.locator('[data-cast="PARTNER"]').locator('..').locator('.voice-description').count(), 0);
-  await page.locator('[data-cast="PARTNER"]').selectOption('Stock-Quartz');
+
+  await choose(page, '[data-cast="PARTNER"]', 'Unknown-Voice');
+  await until(page, 'the unknown voice', () => document.querySelector('[data-cast="PARTNER"]')?.value === 'Unknown-Voice');
+  assert.ok(await page.evaluate(selector => document.querySelector(selector).disabled, preview), 'No preview for an undescribed voice');
+  assert.equal(await description(page), null);
+  await choose(page, '[data-cast="PARTNER"]', 'Stock-Quartz');
+  await until(page, 'the project to save', () => document.querySelector('[data-cast="PARTNER"]')?.value === 'Stock-Quartz' && document.querySelector('#project-save-status')?.textContent === 'Saved locally');
   await page.reload();
-  await page.waitForFunction(() => document.querySelector('[data-cast="PARTNER"]')?.value === 'Stock-Quartz');
-  assert.equal(await page.locator('[data-cast="JORDAN"]').inputValue(), 'MyVoice');
-  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
-  await page.screenshot({ path: 'artifacts/voice-library-desktop.png', fullPage: true });
+  await until(page, 'the project to open', () => document.querySelector('#project-save-status')?.textContent === 'Saved locally');
+  await until(page, 'Quartz after a reload', () => document.querySelector('[data-cast="PARTNER"]')?.value === 'Stock-Quartz');
+  assert.equal(await value(page, '[data-cast="JORDAN"]'), 'MyVoice');
+
   await page.setViewportSize({ width: 390, height: 844 });
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-  assert.equal(await page.locator('.settings-panel > :first-child h2').innerText(), 'Set the pace');
-  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
-  await page.screenshot({ path: 'artifacts/voice-library-mobile.png', fullPage: true });
+  assert.ok(await fitsWidth(page));
+  assert.deepEqual(await page.locator('.settings-panel h2').allTextContents(), ['Your part', 'Practice', 'Set the pace', 'Mark your script']);
+
   await page.route('**/api/voices', route => route.fulfill({ status: 503, json: { error: 'Offline' } }));
   await page.reload();
-  await page.getByRole('button', { name: 'Preview voice for PARTNER', exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('#voice-preview-audio')?.currentTime > 0.1);
-  assert.equal(renders, 1, 'Local preview works even when voice service is offline');
-  assert.deepEqual(errors, []);
-  console.log('PASS: 12 new catalog voices and served previews; preview/play mutual exclusion; stop/end/error handling; cast/render preservation; source labels; unknown fallback; mobile; actor retained. Render audio is mocked; preview WAVs are real assets.');
-} finally { await browser.close(); }
+  // The list is empty before the project opens too, so wait for the project and the voice check.
+  await until(page, 'the offline project', () => document.querySelector('#project-save-status')?.textContent === 'Saved locally' && !document.querySelector('.local-badge')?.textContent.includes('Checking') && document.querySelector('[data-cast="PARTNER"]')?.textContent.includes('Engine unavailable'));
+  await press(page, preview);
+  await until(page, 'the offline preview', () => document.querySelector('#voice-preview-audio')?.currentTime > 0.1);
+  assert.equal(tts(), made, 'Local preview works even when voice service is offline');
+  assert.deepEqual(page.errors, []);
+  console.log('PASS: the whole voice catalogue on Cast with labels, genders and accents; 12 added voices with served previews; preview and play stop each other; stop, end and error handling; cast and made audio kept; unknown voice fallback; mobile; actor voice kept; stock previews work offline.');
+} finally { await browser.close(); await app.close(); }

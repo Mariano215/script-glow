@@ -21,8 +21,9 @@ export const voiceIdentity = (voice: string, aliases: Record<string, string> = {
 export function voiceOwners(voice: string, name: string, characters: string[], cast: Record<string, string>, aliases: Record<string, string> = {}): string[] {
   return characters.filter(other => other !== name && cast[other] && voiceIdentity(cast[other], aliases) === voiceIdentity(voice, aliases));
 }
-export const voiceGenders: Readonly<Record<string, VoiceGender>> = {
-  'Stock-Mica': 'female', 'Stock-Amber': 'female', 'British-Female': 'female',
+// Hosted engines add their voices here when they are listed.
+export const voiceGenders: Record<string, VoiceGender> = {
+  'Stock-Mica': 'female', 'Stock-Amber': 'female',
   'Stock-Granite': 'male', 'Stock-Ash': 'male',
   ...Object.fromEntries(Object.entries(voiceCatalog).map(([id, voice]) => [id, voice.gender])),
 };
