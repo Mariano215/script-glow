@@ -115,3 +115,31 @@ try {
     await rm(offTemp, { recursive: true, force: true });
   }
 }
+
+// The release switch off, but the saved profile still says kokoro (it was saved by a build that
+// offered it): Settings says so in a short note, with no download panel and no card selected.
+{
+  const savedTemp = await mkdtemp(path.join(os.tmpdir(), 'script-glow-builtin-saved-'));
+  const savedApp = createApp({ cacheDir: path.join(savedTemp, 'cache'), projectsDir: path.join(savedTemp, 'projects'), previewDir: path.join(savedTemp, 'previews'), connectionsFile: path.join(savedTemp, 'connections.json'), secretsFile: path.join(savedTemp, 'secrets.json'), modelsDir: path.join(savedTemp, 'models'), connections: { ...DEFAULT_CONNECTIONS, voice: { engine: 'kokoro', model: '' } },
+    serviceFetch: async url => { throw new Error(`nothing is listening on ${url}`); },
+    kokoro: { available: false, manifest, fetch: kokoroFetch, workerFile: fileURLToPath(new URL('../tests/fixtures/fake-kokoro-worker.js', import.meta.url)) } });
+  const savedServer = savedApp.listen(0, '127.0.0.1');
+  await new Promise(resolve => savedServer.once('listening', resolve));
+  const savedBrowser = await launch();
+  try {
+    const page = await savedBrowser.newPage();
+    page.on('dialog', dialog => dialog.accept());
+    await page.goto(`http://127.0.0.1:${savedServer.address().port}/#settings`);
+    await until(page, 'the engine cards', () => !!document.querySelector('.engine-card'));
+    await until(page, 'the not-available note', () => document.querySelector('#set-voices')?.textContent.includes('Built-in voices are not available in this version. Choose another engine.'));
+    assert.equal(await page.locator('.kokoro-panel').count(), 0, 'No download panel');
+    assert.equal(await page.locator('[data-action="kokoro-download"]').count(), 0, 'No download button');
+    assert.equal(await page.locator('#service-engine-kokoro').count(), 0, 'No Built-in voices card');
+    assert.equal(await page.locator('input[name="service-engine"]:checked').count(), 0, 'No engine card is selected');
+    console.log('PASS: a saved kokoro profile with the switch off shows a short note in Settings, no download panel and no selected card.');
+  } finally {
+    await savedBrowser.close();
+    await new Promise(resolve => savedServer.close(resolve));
+    await rm(savedTemp, { recursive: true, force: true });
+  }
+}
