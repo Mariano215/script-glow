@@ -18,3 +18,10 @@ test('parseServerHost rejects empty, invalid, and non-host input', () => {
     assert.equal(parseServerHost(input), null, input);
   }
 });
+
+test('parseServerHost rejects a hostname a lenient URL parser percent-encoded instead of rejecting', () => {
+  // Browsers accept `new URL('http://not a host')` and turn the space into %20 instead of
+  // throwing, unlike Node; the hostname shape check must still catch that.
+  assert.equal(parseServerHost('not a host'), null);
+  assert.equal(parseServerHost('http://not%20a%20host'), null);
+});

@@ -718,13 +718,15 @@ function showFirstRun() {
     </div>`;
   const hostStep = () => `<h2 id="first-run-title">Where is your voice server?</h2>
     <p>The computer that runs Chatterbox. Ollama and WhisperX are set up on the same computer with their standard ports. You can change each one later in Settings.</p>
-    <label class="visually-hidden" for="first-run-host">Voice server address</label>
-    <input id="first-run-host" type="text" placeholder="192.168.1.20" autocomplete="off" spellcheck="false">
-    <p class="first-run-error" role="alert" hidden></p>
-    <div class="first-run-choices">
-      <button type="button" class="button primary" data-action="first-run-connect">Connect</button>
-      <button type="button" class="text-link" data-action="first-run-manual">Enter addresses by hand</button>
-    </div>`;
+    <form data-form="first-run-host">
+      <label class="visually-hidden" for="first-run-host">Voice server address</label>
+      <input id="first-run-host" type="text" placeholder="192.168.1.20" autocomplete="off" spellcheck="false">
+      <p class="first-run-error" role="alert" hidden></p>
+      <div class="first-run-actions">
+        <button type="submit" class="button primary">Connect</button>
+        <button type="button" class="text-link" data-action="first-run-manual">Enter addresses by hand</button>
+      </div>
+    </form>`;
   dialog.innerHTML = welcomeStep();
   // Sends focus to the Chatterbox address field once Settings is on screen, however it got there.
   const focusChatterbox = () => {
@@ -742,31 +744,41 @@ function showFirstRun() {
       else window.addEventListener('hashchange', () => requestAnimationFrame(focusChatterbox), { once: true });
     }
   };
+  dialog.addEventListener('submit', async event => {
+    event.preventDefault();
+    const field = dialog.querySelector<HTMLInputElement>('#first-run-host');
+    const error = dialog.querySelector<HTMLElement>('.first-run-error');
+    const host = parseServerHost(field?.value ?? '');
+    if (!host) {
+      if (error) { error.textContent = 'Enter the computer’s address, for example 192.168.1.20.'; error.hidden = false; }
+      // Pressing Enter to submit also sends a synthetic click to the submit button, which can
+      // move focus there right after this runs; putting the focus call last wins that race.
+      requestAnimationFrame(() => field?.focus());
+      return;
+    }
+    dialog.close();
+    await loadSettings(true);
+    if (settingsDraft) {
+      settingsDraft.chatterbox.url = `${host.scheme}://${host.host}:8095`;
+      settingsDraft.ollama.url = `${host.scheme}://${host.host}:11434`;
+      settingsDraft.whisperx.url = `${host.scheme}://${host.host}:8010`;
+    }
+    openSettingsOn('chatterbox', false);
+    void testService('voice'); void testService('names');
+  });
   dialog.addEventListener('click', async event => {
     const target = event.target as HTMLElement;
     const choice = target.closest<HTMLButtonElement>('[data-choice]')?.dataset.choice;
     const action = target.closest<HTMLButtonElement>('[data-action]')?.dataset.action;
-    if (choice === 'own') { dialog.innerHTML = hostStep(); return; }
+    if (choice === 'own') {
+      dialog.innerHTML = hostStep();
+      dialog.querySelector<HTMLInputElement>('#first-run-host')?.focus();
+      return;
+    }
     if (action === 'first-run-manual') {
       dialog.close();
       await loadSettings(true);
       openSettingsOn('chatterbox', true);
-      return;
-    }
-    if (action === 'first-run-connect') {
-      const field = dialog.querySelector<HTMLInputElement>('#first-run-host');
-      const error = dialog.querySelector<HTMLElement>('.first-run-error');
-      const host = parseServerHost(field?.value ?? '');
-      if (!host) { if (error) { error.textContent = 'Enter the computer’s address, for example 192.168.1.20.'; error.hidden = false; } return; }
-      dialog.close();
-      await loadSettings(true);
-      if (settingsDraft) {
-        settingsDraft.chatterbox.url = `${host.scheme}://${host.host}:8095`;
-        settingsDraft.ollama.url = `${host.scheme}://${host.host}:11434`;
-        settingsDraft.whisperx.url = `${host.scheme}://${host.host}:8010`;
-      }
-      openSettingsOn('chatterbox', false);
-      void testService('voice'); void testService('names');
       return;
     }
     if (!choice) return;

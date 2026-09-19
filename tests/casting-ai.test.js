@@ -93,6 +93,16 @@ test('an unreachable Ollama server is reported as unreachable, not as guessing b
   await assert.rejects(ai.guess({ names: ['DAVID'] }), error => error.status === 503 && !/Name guessing is off/.test(error.message) && /could not be reached/.test(error.message));
 });
 
+test('a malformed /api/tags reply is reported as a bad answer, not a generic server error', async () => {
+  for (const bad of ['{"models":"oops"}', '"not an object"']) {
+    const ai = createCastingAI({ model: '', serviceFetch: async url => {
+      if (url.endsWith('/api/tags')) return Buffer.from(bad);
+      assert.fail('No model to guess with');
+    } });
+    await assert.rejects(ai.guess({ names: ['DAVID'] }), error => error.status === 503 && /did not answer with a model list/.test(error.message), bad);
+  }
+});
+
 test('invalid or instruction-bearing AI outputs are rejected atomically and never cached', async () => {
   const invalidOutputs = [
     () => Buffer.from('not json'),

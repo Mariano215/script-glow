@@ -60,7 +60,8 @@ export function createCastingAI({ serviceFetch, isRendering = () => false, ollam
         try {
           tags = JSON.parse((await serviceFetch(`${await live(ollamaUrl)}/api/tags`, { signal: AbortSignal.timeout(5000) }, 100000)).toString('utf8'));
         } catch { throw fail('Ollama could not be reached. Check the configured Ollama server, or pick each voice type yourself.', 503); }
-        const installed = (tags?.models ?? []).map(item => item.name).filter(name => typeof name === 'string');
+        if (!record(tags) || !Array.isArray(tags.models)) throw fail('Ollama did not answer with a model list. Check the configured Ollama server, or pick each voice type yourself.', 503);
+        const installed = tags.models.map(item => item?.name).filter(name => typeof name === 'string');
         if (!installed.length) throw fail('Name guessing is off. No model is installed on that Ollama server. Install one there, or pick each voice type yourself.', 503);
         resolvedModel = installed[0];
       }

@@ -53,21 +53,26 @@ try {
   assert.match(await page.locator('label[for="service-chatterbox"]').first().textContent(), /Your Chatterbox server address/);
   console.log('PASS: the welcome shows for a new install, leads to Settings, and Skip saves the defaults once.');
 
-  // Own voice server, connected by address: one address fills in Chatterbox, Ollama and WhisperX,
-  // and nothing is saved until the actor presses Save.
+  // Own voice server, worked entirely from the keyboard: focus starts on the address field, an
+  // invalid entry shows an error and returns focus there, and Enter submits like clicking Connect.
   await rm(file, { force: true });
   await page.reload();
   await until(page, 'the welcome after the profile is removed again', () => !!document.querySelector('dialog.first-run[open]'));
   await page.click('[data-choice="own"]');
   await until(page, 'the voice server address step again', () => !!document.querySelector('#first-run-host'));
+  await until(page, 'focus starting on the voice server address field', () => document.activeElement?.id === 'first-run-host');
+  await page.keyboard.type('not a host');
+  await page.keyboard.press('Enter');
+  await until(page, 'the inline error after an invalid address', () => !document.querySelector('.first-run-error')?.hidden);
+  await until(page, 'focus back on the address field after an invalid address', () => document.activeElement?.id === 'first-run-host');
   await page.fill('#first-run-host', '10.0.0.5');
-  await page.click('[data-action="first-run-connect"]');
-  await until(page, 'Settings filled in from one address', () => location.hash === '#settings'
+  await page.keyboard.press('Enter');
+  await until(page, 'Settings filled in from one address entered by keyboard', () => location.hash === '#settings'
     && document.querySelector('#service-chatterbox')?.value === 'http://10.0.0.5:8095'
     && document.querySelector('#service-ollama')?.value === 'http://10.0.0.5:11434'
     && document.querySelector('#service-whisperx')?.value === 'http://10.0.0.5:8010');
   assert.equal(await exists(file), false, 'Connecting does not save by itself');
-  console.log('PASS: one voice-server address fills in Chatterbox, Ollama and WhisperX without saving.');
+  console.log('PASS: one voice-server address fills in Chatterbox, Ollama and WhisperX without saving, and Enter works the whole step.');
 
   // A Skip that cannot save must not vanish silently. The connections file's folder is a plain
   // file here, so the write fails, and the actor should still see an error on screen.
