@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 export const DEFAULT_CONNECTIONS = Object.freeze({
   version: 1, name: 'Local services',
-  // Which engine speaks the cast. Chatterbox is local; the others are hosted and need a key.
+  // Which engine speaks the cast. Chatterbox and Kokoro (built in) are local; the others are hosted and need a key.
   voice: { engine: 'chatterbox', model: '' },
   // Which model guesses voice types from names. Ollama is local; the others are hosted.
   names: { engine: 'ollama', model: '' },
@@ -15,7 +15,7 @@ export const DEFAULT_CONNECTIONS = Object.freeze({
   ollama: { url: 'http://127.0.0.1:11434', model: '' },
   casting: { preferredActorVoice: '', aliases: {} },
 });
-export const VOICE_ENGINES = Object.freeze(['chatterbox', 'openai', 'gemini', 'elevenlabs']);
+export const VOICE_ENGINES = Object.freeze(['chatterbox', 'kokoro', 'openai', 'gemini', 'elevenlabs']);
 export const NAME_ENGINES = Object.freeze(['ollama', 'openai', 'anthropic', 'gemini', 'xai', 'openrouter']);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const text = (value, max, empty = false) => typeof value === 'string' && value.length <= max && (empty || value.trim().length > 0) && !/[\u0000-\u001f\u007f]/.test(value);
