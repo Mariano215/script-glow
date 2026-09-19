@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createApp } from '../server/app.js';
@@ -72,13 +72,21 @@ try {
     && document.querySelector('#service-chatterbox')?.value === 'http://10.0.0.5:8095'
     && document.querySelector('#service-ollama')?.value === 'http://10.0.0.5:11434'
     && document.querySelector('#service-whisperx')?.value === 'http://10.0.0.5:8010');
-  assert.equal(await exists(file), false, 'Connecting does not save by itself');
+  // Connect saves the three addresses at once, through the same save path Settings now always
+  // uses, so the profile exists and the welcome will not show again on the next launch.
+  for (let i = 0; i < 100 && !await exists(file); i++) await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(await exists(file), true, 'Connect saves the profile by itself');
+  const connected = JSON.parse(await readFile(file, 'utf8'));
+  assert.equal(connected.chatterbox.url, 'http://10.0.0.5:8095');
+  assert.equal(connected.ollama.url, 'http://10.0.0.5:11434');
+  assert.equal(connected.whisperx.url, 'http://10.0.0.5:8010');
+  assert.equal((await (await fetch(`${base}/api/connections`)).json()).firstRun, false, 'firstRun is false once Connect has saved the profile');
   // Connect tests the address it just filled in; the result belongs next to the Chatterbox
   // address it actually tested, not silently attached to a "voice" row nothing displays.
   const chatterboxResult = () => document.querySelector('label[for="service-chatterbox"]')?.closest('.setting-row')?.querySelector('.service-result')?.textContent;
   await until(page, 'the Chatterbox row to show the check it ran on connect', () => !!document.querySelector('label[for="service-chatterbox"]')?.closest('.setting-row')?.querySelector('.service-result')?.textContent);
   assert.match(await page.evaluate(chatterboxResult), /2 voices/);
-  console.log('PASS: one voice-server address fills in Chatterbox, Ollama and WhisperX without saving, and Enter works the whole step.');
+  console.log('PASS: one voice-server address fills in Chatterbox, Ollama and WhisperX and saves them at once, and Enter works the whole step.');
 
   // A Skip that cannot save must not vanish silently. The connections file's folder is a plain
   // file here, so the write fails, and the actor should still see an error on screen.

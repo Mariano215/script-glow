@@ -36,7 +36,7 @@ try {
     const deadline = Date.now() + timeout;
     for (;;) {
       if (await page.evaluate(check)) return;
-      if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}: ${await page.evaluate(() => document.querySelector('.settings-screen .savebar-message')?.textContent || 'no message on the page')}`);
+      if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}: ${await page.evaluate(() => document.querySelector('.settings-screen .settings-status')?.textContent || 'no message on the page')}`);
       await page.waitForTimeout(250);
     }
   };

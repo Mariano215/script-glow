@@ -628,6 +628,10 @@ interface ConnectionProfile { name: string; voice: { engine: string; model: stri
 let settingsDraft: ConnectionProfile | null = null;
 let settingsResults: { service: string; url: string; ok: boolean; detail: string }[] = [];
 let settingsBusy = '';
+let settingsSaving = false;
+let settingsSaveTimer = 0;
+let settingsSavePromise: Promise<void> | null = null;
+let settingsRetryTimer = 0;
 let settingsNotice = '';
 let settingsError = false;
 // Keys for hosted services. The server only ever says whether one is set, plus a hint. A key being
@@ -638,24 +642,23 @@ let settingsKeys: { provider: string; configured: boolean; hint?: string }[] = [
 const keyDrafts: Record<string, string> = {};
 const keyEditing = new Set<string>();
 let settingsAdvancedOpen = false, settingsMoreKeysOpen = false;
-// What was last read from the server, so the Save bar shows only when something changed.
+// The connection profile last confirmed saved, so a save is skipped when nothing changed.
 let settingsSaved = '';
-const settingsDirty = () => !!settingsDraft && JSON.stringify(settingsDraft) !== settingsSaved;
 let settingsNoticeTimer = 0;
 // A success message is shown for a few seconds; an error stays until the next change.
 const settingsSaid = (message: string) => {
   settingsNotice = message; settingsError = false;
   window.clearTimeout(settingsNoticeTimer);
-  settingsNoticeTimer = window.setTimeout(() => { if (settingsNotice === message) { settingsNotice = ''; syncSaveBar(); } }, 5000);
+  settingsNoticeTimer = window.setTimeout(() => { if (settingsNotice === message) { settingsNotice = ''; syncSettingsStatus(); } }, 5000);
 };
-const syncSaveBar = () => {
-  document.querySelector('[data-screen="settings"]')?.classList.toggle('has-unsaved', settingsDirty());
-  const bar = document.querySelector<HTMLElement>('.settings-savebar');
-  if (!bar) return;
-  bar.hidden = !settingsDirty() && !settingsNotice;
-  bar.querySelectorAll<HTMLElement>('[data-action="save-services"], [data-action="reset-services"]').forEach(button => { button.hidden = !settingsDirty(); });
-  const message = bar.querySelector('.savebar-message');
-  if (message) { message.textContent = settingsNotice || 'You have unsaved changes.'; message.classList.toggle('is-bad', !!settingsNotice && settingsError); }
+// Patches only the status line, so typing in a field never loses its cursor to a full redraw.
+const syncSettingsStatus = () => {
+  const status = document.querySelector<HTMLElement>('.settings-status');
+  if (!status) return;
+  const message = settingsSaving ? 'Saving…' : settingsNotice;
+  status.textContent = message;
+  status.setAttribute('role', settingsError && settingsNotice ? 'alert' : 'status');
+  status.classList.toggle('is-bad', !!settingsNotice && settingsError);
 };
 async function loadSettings(force = false) {
   if (settingsDraft && !force) return;
@@ -688,17 +691,53 @@ async function testService(only: string) {
   } catch (error) { settingsNotice = error instanceof Error ? error.message : 'The check could not run.'; settingsError = true; }
   finally { settingsBusy = ''; render(); }
 }
-async function saveServices() {
+// Retries a save exactly once, as soon as nothing is being rendered. A later change still queues
+// its own save through queueSettingsSave, which cancels this if it gets there first.
+function scheduleSettingsRetry() {
+  window.clearInterval(settingsRetryTimer);
+  settingsRetryTimer = window.setInterval(() => {
+    if (busy() || aiLoading) return;
+    window.clearInterval(settingsRetryTimer); settingsRetryTimer = 0;
+    void saveSettingsNow();
+  }, 1000);
+}
+// Saves the draft, retrying the latest value once more if it changed again while the save was in
+// flight, so at most one PUT is ever in flight and a rejected value is never sent again on its own.
+async function saveSettingsNow(): Promise<void> {
+  window.clearTimeout(settingsSaveTimer);
+  if (settingsSavePromise) return settingsSavePromise;
   if (!settingsDraft) return;
-  settingsBusy = 'save'; settingsNotice = ''; settingsError = false; render();
-  try {
-    await api<ConnectionProfile>('/api/connections', { method: 'PUT', body: JSON.stringify(settingsDraft) });
-    await loadSettings(true);
-    // Voices and casting follow the new server; a part already cast by hand is left alone.
-    await connect();
-    settingsSaid('Saved. Voices have been read again from the server you chose.');
-  } catch (error) { settingsNotice = error instanceof Error ? error.message : 'Settings could not be saved.'; settingsError = true; }
-  finally { settingsBusy = ''; render(); }
+  settingsSavePromise = (async () => {
+    while (settingsDraft && JSON.stringify(settingsDraft) !== settingsSaved) {
+      const snapshot = JSON.stringify(settingsDraft);
+      settingsSaving = true; settingsNotice = ''; settingsError = false; syncSettingsStatus();
+      try {
+        await api<ConnectionProfile>('/api/connections', { method: 'PUT', body: snapshot });
+        settingsSaved = snapshot; settingsSaving = false;
+        // Voices and casting follow the new server; a part already cast by hand is left alone.
+        await connect();
+        settingsSaid('Saved'); render();
+      } catch (error) {
+        settingsSaving = false;
+        if (error instanceof Error && 'status' in error && (error as { status?: number }).status === 409) {
+          settingsNotice = 'Saved when the audio finishes.'; settingsError = false;
+          scheduleSettingsRetry();
+        } else {
+          settingsNotice = error instanceof Error ? error.message : 'Settings could not be saved.'; settingsError = true;
+        }
+        render();
+        return;
+      }
+    }
+  })();
+  await settingsSavePromise;
+  settingsSavePromise = null;
+}
+// Text and URL fields debounce; selects, radio cards and checkboxes save right away.
+function queueSettingsSave(immediate: boolean) {
+  window.clearTimeout(settingsSaveTimer);
+  if (immediate) void saveSettingsNow();
+  else settingsSaveTimer = window.setTimeout(() => void saveSettingsNow(), 800);
 }
 // A new install has no settings file. Skip saves the defaults. The other two choices open Settings,
 // where Save writes the file, so the welcome comes back at the next launch until voices are set up.
@@ -762,6 +801,7 @@ function showFirstRun() {
       settingsDraft.chatterbox.url = `${host.scheme}://${host.host}:8095`;
       settingsDraft.ollama.url = `${host.scheme}://${host.host}:11434`;
       settingsDraft.whisperx.url = `${host.scheme}://${host.host}:8010`;
+      await saveSettingsNow();
     }
     openSettingsOn('chatterbox', false);
     void testService('chatterbox'); void testService('names');
@@ -785,7 +825,10 @@ function showFirstRun() {
     dialog.close();
     await loadSettings(true);
     if (choice === 'skip') {
-      await saveServices();
+      // Nothing changed relative to what was just read, so the draft is not "dirty" on its own;
+      // force one save anyway, since a new install has no profile file until something writes it.
+      settingsSaved = '';
+      await saveSettingsNow();
       if (settingsError) flash(settingsNotice || 'The default voices could not be saved.', true);
       return;
     }
@@ -1103,6 +1146,7 @@ function settingsMarkup(): string {
   return `<div class="settings-layout">
     <nav class="settings-nav" aria-label="Settings sections"><p class="settings-nav-title">On this page</p>${sections.map(([id, label], index) => `<button type="button" data-action="settings-jump" data-target="${id}" ${index === 0 ? 'aria-current="true"' : ''}>${label}</button>`).join('')}</nav>
     <form class="settings-form" autocomplete="off">
+      <p class="settings-status ${settingsError ? 'is-bad' : ''}" role="${settingsError && settingsNotice ? 'alert' : 'status'}">${esc(settingsSaving ? 'Saving…' : settingsNotice)}</p>
       <section class="settings-section" id="set-voices" aria-labelledby="set-voices-title">
         <h2 tabindex="-1" id="set-voices-title">Who reads the other parts</h2>
         <p class="section-lead">The engine that speaks your scene partners. Parts you cast by hand are kept when you switch.</p>
@@ -1150,11 +1194,6 @@ function settingsMarkup(): string {
           <p class="library-note">Addresses are saved in <code>data/connections.json</code>, which never holds a key, so it is safe to copy to another computer.</p>
         </details>
       </section>
-      <div class="settings-savebar" ${settingsDirty() || settingsNotice ? '' : 'hidden'}>
-        <p class="savebar-message ${settingsError ? 'is-bad' : ''}" role="status">${esc(settingsNotice || 'You have unsaved changes.')}</p>
-        <button type="button" class="text-link" data-action="reset-services" ${off} ${settingsDirty() ? '' : 'hidden'}>Undo</button>
-        <button type="button" class="button primary" data-action="save-services" ${off} ${settingsDirty() ? '' : 'hidden'}>${settingsBusy === 'save' ? 'Saving…' : 'Save changes'}</button>
-      </div>
     </form>
   </div>`;
 }
@@ -1553,7 +1592,6 @@ app.addEventListener('click', async event => {
   if (action === 'clear-marks') { prefs.loopA = ''; prefs.loopB = ''; applyRate(); persist(); }
   if (action === 'build-restart') { restartBuild(); if (result) audio.currentTime = (prefs.loopA && result.cues.find(item => item.lineId === prefs.loopA)?.start) || 0; }
   if (action === 'test-service') { await testService(target.dataset.service!); return; }
-  if (action === 'save-services') { await saveServices(); return; }
   if (action === 'voice-record') { discardVoice(); await startVoiceRecording(); return; }
   if (action === 'voice-stop') { await stopVoiceRecording(); return; }
   if (action === 'voice-cancel') { await stopVoiceRecording(true); return; }
@@ -1573,7 +1611,6 @@ app.addEventListener('click', async event => {
   if (action === 'cancel-key') { keyEditing.delete(target.dataset.provider!); delete keyDrafts[target.dataset.provider!]; render(); return; }
   if (action === 'settings-jump') { const section = document.getElementById(target.dataset.target!); settingsJumpTarget = section?.id ?? ''; markSettingsSection(); section?.classList.remove('is-flashed'); void section?.offsetWidth; section?.classList.add('is-flashed'); setTimeout(() => section?.classList.remove('is-flashed'), 1500); if (section?.id === 'set-advanced') { settingsAdvancedOpen = true; section.querySelector('details')?.setAttribute('open', ''); } section?.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); section?.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true }); return; }
   if (action === 'save-key' || action === 'remove-key') { await changeKey(target.dataset.provider!, action === 'remove-key'); return; }
-  if (action === 'reset-services') { await loadSettings(true); settingsResults = []; settingsNotice = ''; settingsError = false; render(); return; }
   if (action === 'tape-drag') return;
   if (action === 'tape-focus') { setTakeFocus(!takeFocus); return; }
   if (action === 'tape-centre') { prefs.tapeX = 50; prefs.tapeY = 78; prefs.tapeW = 0; prefs.tapeH = 0; persist(); render(); return; }
@@ -1647,7 +1684,7 @@ addEventListener('keydown', event => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'P
 app.addEventListener('toggle', event => { const target = event.target as HTMLElement; if (target.classList?.contains('advanced')) settingsAdvancedOpen = (target as HTMLDetailsElement).open; if (target.classList?.contains('more-keys')) settingsMoreKeysOpen = (target as HTMLDetailsElement).open; }, true);
 app.addEventListener('input', event => {
   const target = event.target as HTMLInputElement;
-  if (settingsDraft && target.closest('.settings-form') && target.id.startsWith('service-') && (target.type === 'url' || target.type === 'text')) { applySettingField(target); settingsNotice = ''; syncSaveBar(); }
+  if (settingsDraft && target.closest('.settings-form') && target.id.startsWith('service-') && (target.type === 'url' || target.type === 'text')) { applySettingField(target); settingsNotice = ''; syncSettingsStatus(); queueSettingsSave(false); }
   if (target.id === 'seek' && result) audio.currentTime = Number(target.value);
   if (target.id === 'reader-level') { const out = document.querySelector('output[for="reader-level"]'); if (out) out.textContent = `${Math.round(Number(target.value) * 100)}%`; }
   if (target.id === 'line-gap') { const label = document.querySelector('#gap-value'); if (label) label.textContent = `${Number(target.value).toFixed(1)}s`; }
@@ -1681,11 +1718,12 @@ app.addEventListener('change', async event => {
   }
   if (target.id === 'voice-file') { const chosen = target.files?.[0]; target.value = ''; if (chosen) { if (voiceRec) await stopVoiceRecording(true); await voiceFromAudio(chosen); render(); } return; }
   if (target.id.startsWith('key-')) { keyDrafts[target.id.slice(4)] = target.value; return; }
-  if (target.name === 'service-engine' && settingsDraft) { settingsDraft.voice = { engine: target.value, model: '' }; settingsResults = []; settingsNotice = ''; render(); return; }
+  if (target.name === 'service-engine' && settingsDraft) { settingsDraft.voice = { engine: target.value, model: '' }; settingsResults = []; settingsNotice = ''; render(); queueSettingsSave(true); return; }
   if (target.id.startsWith('service-') && settingsDraft) {
-    if (applySettingField(target)) return;
+    if (applySettingField(target)) { queueSettingsSave(true); return; }
     settingsResults = []; settingsNotice = '';
-    syncSaveBar();
+    syncSettingsStatus();
+    queueSettingsSave(true);
     return;
   }
   if (target.id === 'reader-level') { prefs.readerLevel = Number(target.value); setReaderLevel(prefs.readerLevel); persist(); }

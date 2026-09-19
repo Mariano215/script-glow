@@ -48,17 +48,12 @@
 .advanced .checkbox-label{font-size:14px;margin:14px 0 0}
 .voice-recorder{margin:4px 0 8px}
 .personal-sample{width:100%}
-.settings-savebar{position:sticky;bottom:16px;z-index:5;display:flex;align-items:center;gap:16px;background:var(--ink);color:#f2f3e8;border-radius:10px;padding:12px 14px 12px 20px;box-shadow:0 8px 30px #14241e40}
-.settings-savebar[hidden]{display:none}
-.savebar-message{margin:0 auto 0 0;font-size:14px;line-height:1.5}
-.savebar-message.is-bad{color:#ffc9b8}
-.settings-savebar .text-link{color:#d6dccd;text-decoration:underline;font-size:14px}
-.settings-savebar .button.primary{background:#eabd73;color:var(--ink)}
-.settings-savebar .button.primary:hover:not(:disabled){background:#f2cd8d}
+.settings-status{min-height:20px;margin:0 0 4px;font-size:14px;line-height:1.4;color:#3f5f2d}
+.settings-status:empty{margin:0}
+.settings-status.is-bad{color:#9a4a33}
 .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media(max-width:1100px){.settings-layout{grid-template-columns:minmax(0,1fr)}.settings-nav{position:static;flex-direction:row;flex-wrap:wrap}}
-@media(max-width:700px){.settings-section{padding:18px 16px}.setting-row{grid-template-columns:minmax(0,1fr);gap:10px}.engine-grid{grid-template-columns:minmax(0,1fr)}.key-line{grid-template-columns:minmax(0,1fr) auto}.key-actions{grid-column:1/-1;justify-content:flex-start}.key-edit{flex-wrap:wrap}.settings-savebar{bottom:12px;flex-wrap:wrap}}
-.studio-menu a.has-unsaved:after{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:#d98a2b;margin-left:6px;vertical-align:middle}
+@media(max-width:700px){.settings-section{padding:18px 16px}.setting-row{grid-template-columns:minmax(0,1fr);gap:10px}.engine-grid{grid-template-columns:minmax(0,1fr)}.key-line{grid-template-columns:minmax(0,1fr) auto}.key-actions{grid-column:1/-1;justify-content:flex-start}.key-edit{flex-wrap:wrap}}
 @media(max-width:1100px){.settings-nav{position:static;border-left:0;padding-left:0}.settings-nav-title{display:none}}
 .take-name-wrap{display:flex;align-items:center;gap:6px;cursor:text}.take-name-wrap span{color:#5c675e;font-size:14px}.take-name-wrap:hover .take-name,.take-name:focus{background:#fffef8;box-shadow:inset 0 -1px 0 #9db088}
 .play-button.is-waiting{width:auto;padding:0 16px 0 12px;border-radius:20px;gap:6px;background:#4f7040;font-size:14px;font-weight:600}
