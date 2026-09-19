@@ -764,7 +764,7 @@ function showFirstRun() {
       settingsDraft.whisperx.url = `${host.scheme}://${host.host}:8010`;
     }
     openSettingsOn('chatterbox', false);
-    void testService('voice'); void testService('names');
+    void testService('chatterbox'); void testService('names');
   });
   dialog.addEventListener('click', async event => {
     const target = event.target as HTMLElement;

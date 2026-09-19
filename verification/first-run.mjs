@@ -11,7 +11,8 @@ const temp = await mkdtemp(path.join(os.tmpdir(), 'script-glow-first-run-'));
 const file = path.join(temp, 'connections.json');
 const exists = target => stat(target).then(() => true, () => false);
 const app = createApp({ cacheDir: path.join(temp, 'cache'), projectsDir: path.join(temp, 'projects'), previewDir: path.join(temp, 'previews'), connectionsFile: file, secretsFile: path.join(temp, 'secrets.json'), connections: DEFAULT_CONNECTIONS, firstRunScreen: true,
-  serviceFetch: async url => { throw new Error(`nothing is listening on ${url}`); } });
+  // Connect tests the address it just filled in; a voice list lets that check show a real result.
+  serviceFetch: async url => { if (url.endsWith('/v1/voices')) return Buffer.from(JSON.stringify(['One', 'Two'])); throw new Error(`nothing is listening on ${url}`); } });
 const server = app.listen(0, '127.0.0.1');
 await new Promise(resolve => server.once('listening', resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
@@ -72,6 +73,11 @@ try {
     && document.querySelector('#service-ollama')?.value === 'http://10.0.0.5:11434'
     && document.querySelector('#service-whisperx')?.value === 'http://10.0.0.5:8010');
   assert.equal(await exists(file), false, 'Connecting does not save by itself');
+  // Connect tests the address it just filled in; the result belongs next to the Chatterbox
+  // address it actually tested, not silently attached to a "voice" row nothing displays.
+  const chatterboxResult = () => document.querySelector('label[for="service-chatterbox"]')?.closest('.setting-row')?.querySelector('.service-result')?.textContent;
+  await until(page, 'the Chatterbox row to show the check it ran on connect', () => !!document.querySelector('label[for="service-chatterbox"]')?.closest('.setting-row')?.querySelector('.service-result')?.textContent);
+  assert.match(await page.evaluate(chatterboxResult), /2 voices/);
   console.log('PASS: one voice-server address fills in Chatterbox, Ollama and WhisperX without saving, and Enter works the whole step.');
 
   // A Skip that cannot save must not vanish silently. The connections file's folder is a plain
