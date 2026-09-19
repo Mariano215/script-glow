@@ -51,6 +51,21 @@ async function ensureCanvasBinding(context) {
   }
 }
 
+// The Kokoro worker runs from app.asar.unpacked, like the PDF worker, so every package it can import
+// is unpacked with it (onnxruntime-node also loads native libraries, which cannot load from an
+// archive). The list follows package-lock.json, so a new dependency is never missed.
+function unpackedTree(...roots) {
+  const lock = JSON.parse(fs.readFileSync(path.join(ROOT, 'package-lock.json'), 'utf8')).packages;
+  const found = new Set(), waiting = [...roots];
+  while (waiting.length) {
+    const name = waiting.shift(), entry = lock[`node_modules/${name}`];
+    if (found.has(name) || !entry || entry.dev) continue;
+    found.add(name);
+    waiting.push(...Object.keys({ ...entry.dependencies, ...entry.optionalDependencies }));
+  }
+  return [...found].sort().map(name => `node_modules/${name}/**`);
+}
+
 // Playwright's electron.launch drives the app through --inspect, so the unsigned CI smoke-test
 // build may keep that one fuse on. A build with signing settings is always strict.
 const inspectable = process.env.SCRIPT_GLOW_INSPECTABLE_BUILD === '1';
@@ -70,7 +85,10 @@ module.exports = {
   // pdfjs-dist's legacy build needs @napi-rs/canvas (a native module) at runtime for its
   // DOMMatrix/Path2D polyfills outside a browser. The worker's own files are named directly;
   // it needs no other sibling from server/.
-  asarUnpack: ['server/pdf-worker.js', 'server/pdf-text.js', 'node_modules/pdfjs-dist/**', 'node_modules/@napi-rs/**'],
+  asarUnpack: ['server/pdf-worker.js', 'server/pdf-text.js', 'node_modules/pdfjs-dist/**', 'node_modules/@napi-rs/**',
+    'server/kokoro/**', ...unpackedTree('@huggingface/transformers', 'onnxruntime-node', 'number-to-words')],
+  // Next to the app, where anyone can read it: the licenses of everything shipped or downloaded.
+  extraResources: [{ from: 'THIRD_PARTY_NOTICES.md', to: 'THIRD_PARTY_NOTICES.md' }],
   mac: {
     artifactName: '${productName}-${version}-${arch}.${ext}',
     target: [{ target: 'dmg', arch: ['arm64', 'x64'] }, { target: 'zip', arch: ['arm64', 'x64'] }],

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 
 // What ships: every installed package that is not only a development tool. package-lock.json
 // records each package's license, so no network and no node_modules walk is needed.
@@ -27,4 +28,26 @@ test('sharp is the empty stub in stubs/sharp', () => {
   // not a real installed sharp package.
   assert.equal(lock.packages['node_modules/sharp']?.link, true);
   assert.match(String(lock.packages['node_modules/sharp']?.resolved), /stubs\/sharp$/);
+});
+
+// A shipped package with no license field would slip past the copyleft check above, so it fails
+// here unless it is named below with the reason.
+const NO_LICENSE_FIELD_OK = new Set([
+  // The link npm makes for the sharp override: our own empty stub, MIT in stubs/sharp/package.json.
+  'node_modules/sharp',
+  // npm 12's record of that link's target, written relative to transformers.js. Nothing is installed there.
+  'node_modules/@huggingface/transformers/stubs/sharp',
+]);
+const missingLicense = entries => entries.filter(([where, entry]) => !entry.license && !NO_LICENSE_FIELD_OK.has(where)).map(([where]) => where);
+
+test('every shipped package states a license, apart from the sharp stub', () => {
+  assert.deepEqual(missingLicense(shipped), []);
+  assert.deepEqual(missingLicense([['node_modules/left-pad', { version: '1.0.0' }], ['node_modules/sharp', { link: true }]]), ['node_modules/left-pad']);
+});
+
+test('THIRD_PARTY_NOTICES.md is up to date and covers the voice files and the packages that run them', () => {
+  execFileSync(process.execPath, ['scripts/third-party-notices.mjs', '--check'], { cwd: new URL('../', import.meta.url) });
+  const notices = readFileSync(new URL('../THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8');
+  for (const part of ['Kokoro-82M v1.0', 'Misaki English word lists', 'graphemes_to_phonemes_en_us', '### @huggingface/transformers ', '### onnxruntime-node ', '### number-to-words ', '### express '])
+    assert.ok(notices.includes(part), part);
 });
