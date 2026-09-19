@@ -13,6 +13,7 @@ import { browserMp4, browserMp4Type, castingFileName, castingFit, countBeep, mon
 import { inferCharacters, assignCast, resolvedGender, voiceGenders, voiceOwners, validGuesses, withNameGuesses, type NameGuesses, type GenderChoice } from './casting';
 import { voiceCatalog } from './voice-catalog';
 import { openHelp } from './help';
+import { parseServerHost } from './server-address';
 
 interface RenderResult { fullUrl: string; practiceUrl: string; duration: number; cues: Cue[] }
 interface Job { id: string; status: 'queued' | 'running' | 'complete' | 'error'; completed: number; total: number; error?: string; result?: RenderResult }
@@ -708,15 +709,66 @@ function showFirstRun() {
   const dialog = document.createElement('dialog');
   dialog.className = 'first-run';
   dialog.setAttribute('aria-labelledby', 'first-run-title');
-  dialog.innerHTML = `<h2 id="first-run-title">Welcome to Script Glow</h2>
+  const welcomeStep = () => `<h2 id="first-run-title">Welcome to Script Glow</h2>
     <p>Choose who reads the other parts. You can change this at any time in Settings.</p>
     <div class="first-run-choices">
       <button type="button" data-choice="hosted"><strong>Use a paid voice service</strong><span>OpenAI, Google Gemini or ElevenLabs. Works on any laptop. You need an API key from the service.</span></button>
       <button type="button" data-choice="own"><strong>I have my own voice server</strong><span>Chatterbox on this computer or another one. Free and private.</span></button>
       <button type="button" data-choice="skip"><strong>Skip for now</strong><span>Look around with the sample script. The cast cannot read until you choose a voice service.</span></button>
     </div>`;
+  const hostStep = () => `<h2 id="first-run-title">Where is your voice server?</h2>
+    <p>The computer that runs Chatterbox. Ollama and WhisperX are set up on the same computer with their standard ports. You can change each one later in Settings.</p>
+    <label class="visually-hidden" for="first-run-host">Voice server address</label>
+    <input id="first-run-host" type="text" placeholder="192.168.1.20" autocomplete="off" spellcheck="false">
+    <p class="first-run-error" role="alert" hidden></p>
+    <div class="first-run-choices">
+      <button type="button" class="button primary" data-action="first-run-connect">Connect</button>
+      <button type="button" class="text-link" data-action="first-run-manual">Enter addresses by hand</button>
+    </div>`;
+  dialog.innerHTML = welcomeStep();
+  // Sends focus to the Chatterbox address field once Settings is on screen, however it got there.
+  const focusChatterbox = () => {
+    const field = document.getElementById('service-chatterbox');
+    field?.scrollIntoView({ block: 'center', behavior: 'instant' });
+    (field as HTMLElement | null)?.focus();
+  };
+  const openSettingsOn = (engine: 'openai' | 'chatterbox', focus: boolean) => {
+    if (settingsDraft) settingsDraft.voice.engine = engine;
+    render();
+    const alreadyOnSettings = location.hash === '#settings';
+    if (!alreadyOnSettings) location.hash = '#settings';
+    if (focus) {
+      if (alreadyOnSettings) requestAnimationFrame(focusChatterbox);
+      else window.addEventListener('hashchange', () => requestAnimationFrame(focusChatterbox), { once: true });
+    }
+  };
   dialog.addEventListener('click', async event => {
-    const choice = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-choice]')?.dataset.choice;
+    const target = event.target as HTMLElement;
+    const choice = target.closest<HTMLButtonElement>('[data-choice]')?.dataset.choice;
+    const action = target.closest<HTMLButtonElement>('[data-action]')?.dataset.action;
+    if (choice === 'own') { dialog.innerHTML = hostStep(); return; }
+    if (action === 'first-run-manual') {
+      dialog.close();
+      await loadSettings(true);
+      openSettingsOn('chatterbox', true);
+      return;
+    }
+    if (action === 'first-run-connect') {
+      const field = dialog.querySelector<HTMLInputElement>('#first-run-host');
+      const error = dialog.querySelector<HTMLElement>('.first-run-error');
+      const host = parseServerHost(field?.value ?? '');
+      if (!host) { if (error) { error.textContent = 'Enter the computer’s address, for example 192.168.1.20.'; error.hidden = false; } return; }
+      dialog.close();
+      await loadSettings(true);
+      if (settingsDraft) {
+        settingsDraft.chatterbox.url = `${host.scheme}://${host.host}:8095`;
+        settingsDraft.ollama.url = `${host.scheme}://${host.host}:11434`;
+        settingsDraft.whisperx.url = `${host.scheme}://${host.host}:8010`;
+      }
+      openSettingsOn('chatterbox', false);
+      void testService('voice'); void testService('names');
+      return;
+    }
     if (!choice) return;
     dialog.close();
     await loadSettings(true);
@@ -725,20 +777,7 @@ function showFirstRun() {
       if (settingsError) flash(settingsNotice || 'The default voices could not be saved.', true);
       return;
     }
-    if (settingsDraft) settingsDraft.voice.engine = choice === 'hosted' ? 'openai' : 'chatterbox';
-    render();
-    const alreadyOnSettings = location.hash === '#settings';
-    if (!alreadyOnSettings) location.hash = '#settings';
-    if (choice === 'own') {
-      // The address field is what the actor came here to find, so send focus straight to it.
-      const focusChatterbox = () => {
-        const field = document.getElementById('service-chatterbox');
-        field?.scrollIntoView({ block: 'center', behavior: 'instant' });
-        (field as HTMLElement | null)?.focus();
-      };
-      if (alreadyOnSettings) requestAnimationFrame(focusChatterbox);
-      else window.addEventListener('hashchange', () => requestAnimationFrame(focusChatterbox), { once: true });
-    }
+    openSettingsOn(choice === 'hosted' ? 'openai' : 'chatterbox', choice === 'own');
   });
   dialog.addEventListener('close', () => dialog.remove());
   document.body.append(dialog);
