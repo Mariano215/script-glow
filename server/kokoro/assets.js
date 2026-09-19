@@ -150,7 +150,8 @@ export function createDownloader({ dir, manifest, fetchImpl = fetch, openFile = 
     settled: () => running ?? Promise.resolve(),
     async remove() {
       if (running) throw Object.assign(new Error('The voices are still downloading. Wait for the download to finish, then remove them.'), { status: 409 });
-      await rm(dir, { recursive: true, force: true });
+      // Retried: on Windows a file just closed by the stopped worker can stay locked for a moment.
+      await rm(dir, { recursive: true, force: true, maxRetries: 5 });
       state = { status: 'idle', received: 0, total, error: '' };
     },
   };

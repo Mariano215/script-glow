@@ -1,12 +1,14 @@
 // Stands in for server/kokoro/worker.js in tests: the same messages, no model. The text decides
 // what happens: "hang" never answers, "crash" exits, "crash-once" exits only the first time,
 // "fail" answers with an error, "slow ..." takes a moment. Every request is logged to calls.log in
-// the folder given as the first argument. The audio carries this process id and what was asked.
+// the folder given as the first argument, and this process id to worker.pid there. The audio carries
+// this process id and what was asked.
 import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const dir = process.argv[2];
 const port = process.parentPort;
+writeFileSync(path.join(dir, 'worker.pid'), String(process.pid));
 const reply = message => port ? port.postMessage(message) : process.send(message);
 let busy = false;
 async function handle({ id, voice, text }) {

@@ -16,6 +16,9 @@ const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const manifestOf = files => ({ version: 1, tag: 'test', base: 'https://example.invalid/kokoro', files: Object.entries(files).map(([file, bytes]) => ({ path: file, size: bytes.length, sha256: sha(bytes) })) });
 const post = (base, route, body) => fetch(base + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
+// The process id the fake worker wrote, for the kokoroServer made last.
+let pid;
+const alive = worker => { try { process.kill(worker, 0); return true; } catch { return false; } };
 async function kokoroServer(t, { downloaded = true, files = FILES, cacheDir, available = true, voice = { engine: 'kokoro', model: '' } } = {}) {
   const temp = await mkdtemp(path.join(os.tmpdir(), 'script-glow-kokoro-engine-'));
   const modelsDir = path.join(temp, 'models');
@@ -28,6 +31,7 @@ async function kokoroServer(t, { downloaded = true, files = FILES, cacheDir, ava
   await once(server, 'listening');
   t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(temp, { recursive: true, force: true }); });
   const base = `http://127.0.0.1:${server.address().port}`;
+  pid = async () => Number(await readFile(path.join(modelsDir, 'worker.pid'), 'utf8'));
   const calls = async () => (await readFile(path.join(modelsDir, 'calls.log'), 'utf8').catch(() => '')).split('\n').filter(Boolean);
   return { base, calls };
 }
@@ -93,9 +97,22 @@ test('without the files a render says so; a download makes them ready, and a ren
   const waited = await render(base, scene());
   assert.equal(waited.status, 'complete', waited.error);
   assert.equal((await (await fetch(`${base}/api/kokoro`)).json()).ready, true);
+  const worker = await pid();
   const removed = await fetch(`${base}/api/kokoro`, { method: 'DELETE' });
   assert.equal(removed.status, 200);
+  assert.throws(() => process.kill(worker, 0), { code: 'ESRCH' }, 'The worker has exited before its files are deleted');
   assert.equal((await removed.json()).ready, false);
+});
+
+test('switching to another engine stops the built-in voices worker', async t => {
+  const { base } = await kokoroServer(t);
+  assert.equal((await render(base, scene())).status, 'complete');
+  const worker = await pid();
+  process.kill(worker, 0);
+  const saved = await fetch(`${base}/api/connections`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...DEFAULT_CONNECTIONS, voice: { engine: 'openai', model: '' } }) });
+  assert.equal(saved.status, 200);
+  for (let i = 0; i < 100 && alive(worker); i++) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(alive(worker), false, 'The worker is stopped once Kokoro is no longer the engine');
 });
 
 test('a preview is made on this computer, once', async t => {

@@ -156,6 +156,8 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
     if (!kokoroAvailable && req.body?.voice?.engine === 'kokoro') return res.status(400).json({ error: KOKORO_OFF });
     try { profile = await saveConnections(connectionsFile, { ...req.body, version: 1 }); }
     catch (error) { return res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid connection settings.' }); }
+    // Another engine now reads the lines, so the built-in voices worker gives its memory back.
+    if (engine() !== 'kokoro') void kokoroVoice.stop();
     res.json({ ...profile, adapters: { chatterbox: 'named-voices', whisperx: 'multipart-transcribe', ollama: 'installed-models' } });
   });
   // A key goes in and never comes back out. The browser sees only whether one is set and a hint.
@@ -529,7 +531,7 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
     app.post('/api/kokoro/download', async (req, res) => { void kokoroFiles.start(); res.status(202).json({ ...kokoroFiles.state(), ready: await kokoroReady() }); });
     app.delete('/api/kokoro', async (req, res) => {
       if (draining || queue.length > 0) throw fail('Audio is being made right now. Wait for it to finish, then remove the voices.', 409);
-      kokoroVoice.stop();
+      await kokoroVoice.stop();
       await kokoroFiles.remove();
       res.json({ ...kokoroFiles.state(), ready: await kokoroReady() });
     });

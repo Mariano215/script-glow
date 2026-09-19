@@ -28,10 +28,14 @@ const deliver = (child, message) => utilityProcess ? child.postMessage(message) 
 
 export function createKokoroClient({ workerFile = WORKER_FILE, args = [], timeoutMs = 60000, idleMs = 10 * 60000 } = {}) {
   let child = null, idle = null, nextId = 1, queue = Promise.resolve();
+  // Resolves once the worker has exited, so its files can be deleted (Windows keeps open files locked).
   function stop() {
     clearTimeout(idle);
     const running = child; child = null;
-    running?.kill();
+    if (!running) return Promise.resolve();
+    const exited = new Promise(resolve => running.once('exit', resolve));
+    running.kill();
+    return exited;
   }
   function worker() {
     if (!child) {
