@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { once } from 'node:events';
 import { createHash } from 'node:crypto';
-import { mkdtemp, open, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, open, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { MANIFEST, assetName, assetsReady, cacheIdentity, createDownloader, voiceList } from '../server/kokoro/assets.js';
+import { MANIFEST, assetName, assetsReady, cacheIdentity, createDownloader, hashFile, voiceList } from '../server/kokoro/assets.js';
 
 const bytes = (length, seed) => Buffer.from(Array.from({ length }, (_, i) => (i * 7 + seed) % 251));
 const sha = data => createHash('sha256').update(data).digest('hex');
@@ -80,6 +80,55 @@ test('a full disk says so, and no file is left looking finished', async t => {
   await download.start();
   assert.match(download.state().error, /not enough free disk space/);
   await assert.rejects(stat(path.join(dir, MODEL)), { code: 'ENOENT' });
+});
+
+// Files copied in by hand (or restored from a CI cache) sit at their final names, like a finished download.
+async function seed(dir, files) {
+  for (const [file, data] of Object.entries(files)) { await mkdir(path.dirname(path.join(dir, file)), { recursive: true }); await writeFile(path.join(dir, file), data); }
+}
+const counting = () => { const hashed = []; return { hashed, hashFile: file => { hashed.push(file); return hashFile(file); } }; };
+
+test('a file with the right size but the wrong bytes is refused, deleted and downloaded again', async t => {
+  const { manifest, dir } = await release(t);
+  const voice = 'kokoro/voices/af_heart.bin';
+  await seed(dir, { ...FILES, [voice]: bytes(FILES[voice].length, 50) });
+  assert.equal(await assetsReady(dir, manifest), false);
+  await assert.rejects(stat(path.join(dir, voice)), { code: 'ENOENT' });
+  // A seeded file goes through the same check in the downloader: no size-only shortcut.
+  await seed(dir, { [voice]: bytes(FILES[voice].length, 50) });
+  const download = createDownloader({ dir, manifest });
+  await download.start();
+  assert.equal(download.state().status, 'ready', download.state().error);
+  assert.deepEqual(await readFile(path.join(dir, voice)), FILES[voice]);
+  assert.equal(await assetsReady(dir, manifest), true);
+});
+
+test('a verified file is not hashed again until its size, time or expected hash changes', async t => {
+  const { manifest, dir } = await release(t);
+  await seed(dir, FILES);
+  const first = counting();
+  assert.equal(await assetsReady(dir, manifest, { hashFile: first.hashFile }), true);
+  assert.equal(first.hashed.length, 3, 'Seeded files are hashed once');
+  const again = counting();
+  assert.equal(await assetsReady(dir, manifest, { hashFile: again.hashFile }), true);
+  assert.equal(again.hashed.length, 0, 'Unchanged files are not hashed again');
+  await utimes(path.join(dir, MODEL), new Date(), new Date(Date.now() - 60000));
+  const touched = counting();
+  assert.equal(await assetsReady(dir, manifest, { hashFile: touched.hashFile }), true);
+  assert.equal(touched.hashed.length, 1, 'A changed time hashes that one file again');
+  const moved = structuredClone(manifest); moved.files[1].sha256 = sha(Buffer.from('a new voice file'));
+  const newManifest = counting();
+  assert.equal(await assetsReady(dir, moved, { hashFile: newManifest.hashFile }), false, 'A new expected hash is checked, and the old file fails it');
+  assert.equal(newManifest.hashed.length, 1);
+  await assert.rejects(stat(path.join(dir, 'kokoro/voices/af_heart.bin')), { code: 'ENOENT' });
+});
+
+test('a downloaded file is recorded as verified, so the ready check does not hash it again', async t => {
+  const { manifest, dir } = await release(t);
+  await createDownloader({ dir, manifest }).start();
+  const after = counting();
+  assert.equal(await assetsReady(dir, manifest, { hashFile: after.hashFile }), true);
+  assert.equal(after.hashed.length, 0);
 });
 
 test('voices come from the voice files, best rated first, accent and gender from the name', () => {

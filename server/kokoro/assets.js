@@ -1,9 +1,9 @@
 // The built-in voice files: which ones there are (manifest.json, written by
 // scripts/kokoro-assets.mjs), whether they are all on this computer, and a download that resumes
 // after an interruption and refuses any file whose SHA-256 does not match.
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, readFileSync } from 'node:fs';
-import { mkdir, open, rm, stat, unlink } from 'node:fs/promises';
+import { mkdir, open, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { renameRetry } from '../connections.js';
 import { G2P_VERSION } from './g2p.js';
@@ -21,13 +21,49 @@ function assetPath(dir, file) {
   }
   return path.join(dir, ...parts);
 }
-const sized = async (file, size) => { try { return (await stat(file)).size === size; } catch { return false; } };
-// Every file present at its full size. A file only gets its real name after its hash matched.
-export async function assetsReady(dir, manifest) {
-  const ready = await Promise.all(manifest.files.map(async file => {
-    try { return await sized(assetPath(dir, file.path), file.size); } catch { return false; }
-  }));
-  return ready.every(Boolean);
+// Streams the file, so the 300 MB model is never read into memory at once.
+export async function hashFile(file) {
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(file)) hash.update(chunk);
+  return hash.digest('hex');
+}
+// verified.json in the models folder remembers each file's size, time and the hash it matched, so
+// the 300 MB model is hashed once, not at every start. A file whose size or time changed, or whose
+// expected hash changed with a new manifest, is hashed again.
+const RECORD = 'verified.json';
+async function readRecord(dir) {
+  try { const record = JSON.parse(await readFile(path.join(dir, RECORD), 'utf8')); return record && typeof record === 'object' && !Array.isArray(record) ? record : {}; } catch { return {}; }
+}
+// ponytail: two checks writing at once can drop an entry; the cost is one extra hash later.
+async function writeRecord(dir, record) {
+  const file = path.join(dir, RECORD), temp = `${file}.${randomUUID()}.tmp`;
+  await mkdir(dir, { recursive: true });
+  await writeFile(temp, JSON.stringify(record));
+  await renameRetry(temp, file);
+}
+// True when the file sits at its final name with the manifest's bytes. A file with the right size but
+// other bytes is deleted, so the downloader fetches it again. Copied-in and cached files come through here too.
+async function verified(dir, file, record, hash) {
+  const final = assetPath(dir, file.path);
+  let info;
+  try { info = await stat(final); } catch { return false; }
+  if (info.size !== file.size) return false;
+  const seen = record[file.path];
+  if (seen?.size === info.size && seen.mtimeMs === info.mtimeMs && seen.sha256 === file.sha256) return true;
+  delete record[file.path];
+  if (await hash(final) !== file.sha256) { await rm(final, { force: true }); return false; }
+  record[file.path] = { size: info.size, mtimeMs: info.mtimeMs, sha256: file.sha256 };
+  return true;
+}
+// Every file present with its manifest SHA-256. hashFile is there for the tests, which count calls.
+export async function assetsReady(dir, manifest, { hashFile: hash = hashFile } = {}) {
+  const record = await readRecord(dir), before = JSON.stringify(record);
+  let ready = true;
+  for (const file of manifest.files) {
+    try { if (!await verified(dir, file, record, hash)) ready = false; } catch { ready = false; }
+  }
+  if (JSON.stringify(record) !== before) await writeRecord(dir, record);
+  return ready;
 }
 // What the line cache key needs: a new model file or new G2P data never reuses old audio.
 export function cacheIdentity(manifest) {
@@ -55,10 +91,10 @@ const said = error => error.code === 'ENOSPC' ? 'There is not enough free disk s
 export function createDownloader({ dir, manifest, fetchImpl = fetch, openFile = open }) {
   const total = manifest.files.reduce((sum, file) => sum + file.size, 0);
   let state = { status: 'idle', received: 0, total, error: '' };
-  let running = null;
+  let running = null, record = {};
   async function fetchOne(file) {
     const final = assetPath(dir, file.path), part = `${final}.part`;
-    if (await sized(final, file.size)) { state.received += file.size; return; }
+    if (await verified(dir, file, record, hashFile)) { state.received += file.size; return; }
     await mkdir(path.dirname(final), { recursive: true });
     let have = 0;
     try { have = (await stat(part)).size; } catch { /* nothing yet */ }
@@ -90,6 +126,10 @@ export function createDownloader({ dir, manifest, fetchImpl = fetch, openFile = 
       throw Object.assign(new Error(`${file.path} does not match its checksum`), { damaged: true });
     }
     await renameRetry(part, final);
+    const { size, mtimeMs } = await stat(final);
+    record[file.path] = { size, mtimeMs, sha256: file.sha256 };
+    // Written now, so a ready check while the rest downloads does not hash this file again.
+    await writeRecord(dir, record);
   }
   return {
     state: () => ({ ...state }),
@@ -98,8 +138,10 @@ export function createDownloader({ dir, manifest, fetchImpl = fetch, openFile = 
       if (!running) {
         state = { status: 'downloading', received: 0, total, error: '' };
         running = (async () => {
+          record = await readRecord(dir);
           try { for (const file of manifest.files) await fetchOne(file); state.status = 'ready'; }
           catch (error) { state = { ...state, status: 'error', error: said(error) }; }
+          try { await writeRecord(dir, record); } catch { /* the next check hashes again */ }
         })().finally(() => { running = null; });
       }
       return running;
