@@ -2567,7 +2567,7 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 License: ISC
 
-The package has no license file.
+The package has no license file. Copyright (c) nicolas.
 
 ### has-property-descriptors 1.0.2
 
@@ -2859,7 +2859,7 @@ OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHE
 
 License: MIT
 
-The package has no license file.
+The package has no license file. Copyright (c) Vladimir Krivosheev.
 
 ### lodash.escaperegexp 4.1.2
 
@@ -3651,25 +3651,25 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 License: MIT
 
-The package has no license file.
+The package has no license file. Copyright (c) Microsoft Corporation.
 
 ### onnxruntime-node 1.21.0
 
 License: MIT
 
-The package has no license file.
+The package has no license file. Copyright (c) Microsoft Corporation.
 
 ### onnxruntime-web 1.22.0-dev.20250409-89f8206ba4
 
 License: MIT
 
-The package has no license file.
+The package has no license file. Copyright (c) Microsoft Corporation.
 
 ### onnxruntime-common 1.22.0-dev.20250409-89f8206ba4
 
 License: MIT
 
-The package has no license file.
+The package has no license file. Copyright (c) Microsoft Corporation.
 
 ### parseurl 1.3.3
 

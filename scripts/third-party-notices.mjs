@@ -18,6 +18,18 @@ function licenseText(folder) {
     .map(name => lf(readFileSync(path.join(root, folder, name), 'utf8'))).join('\n\n');
 }
 const fenced = text => ['````text', text, '````'];
+// These packages ship no LICENSE/COPYING/NOTICE file, so licenseText() finds nothing for them.
+// Copyright lines below, each cited to the source it was read from.
+const COPYRIGHT_OVERRIDES = {
+  // https://github.com/microsoft/onnxruntime/blob/main/LICENSE
+  'onnxruntime-node': 'Copyright (c) Microsoft Corporation',
+  'onnxruntime-common': 'Copyright (c) Microsoft Corporation',
+  'onnxruntime-web': 'Copyright (c) Microsoft Corporation',
+  // https://github.com/snico-dev/guid-typescript, package.json "author" (no LICENSE file in the repo)
+  'guid-typescript': 'Copyright (c) nicolas',
+  // https://github.com/develar/lazy-val, package.json "author" (no LICENSE file in the repo)
+  'lazy-val': 'Copyright (c) Vladimir Krivosheev',
+};
 const apache = licenseText('node_modules/@huggingface/transformers');
 // Platform builds (cpu set, or os short of Mac, Windows and Linux) are installed only on their own
 // system, so their text is not read: the file must come out the same on Mac, Windows and Linux.
@@ -48,8 +60,12 @@ const lines = [
   '',
   ...shipped.flatMap(item => {
     const text = item.platform ? '' : licenseText(item.where);
+    const override = COPYRIGHT_OVERRIDES[item.name];
     return [`### ${item.name} ${item.version}`, '', `License: ${item.license}`, '',
-      ...(item.platform ? ['A build for one platform. Its license text is in its package folder and matches the package it belongs to.'] : text ? fenced(text) : ['The package has no license file.']), ''];
+      ...(item.platform ? ['A build for one platform. Its license text is in its package folder and matches the package it belongs to.']
+        : text ? fenced(text)
+        : override ? [`The package has no license file. ${override}.`]
+        : ['The package has no license file.']), ''];
   }),
 ];
 const out = `${lines.join('\n').trimEnd()}\n`;

@@ -1,10 +1,12 @@
 # Built-in Kokoro voices: design
 
+Updated 2026-09-19 after implementation: fp32 model, release switch.
+
 Date: 2026-09-19. Status: waiting for Mariano's review.
 
 ## Goal
 
-An actor installs Script Glow and hears the cast read their scene with no voice server, no GPU, no API key and no cost. Kokoro-82M runs on the computer's CPU inside the app, at about 0.4 s per line on an Apple M2 Pro. It becomes the recommended choice for anyone without a voice server. Chatterbox and the paid services stay as they are.
+An actor installs Script Glow and hears the cast read their scene with no voice server, no GPU, no API key and no cost. Kokoro-82M runs on the computer's CPU inside the app, at about 0.46 s per line on an Apple M2 Pro. It becomes the recommended choice for anyone without a voice server. Chatterbox and the paid services stay as they are.
 
 Out of scope: voice cloning with Kokoro (it has none; Record my voice stays a Chatterbox feature), languages other than English, GPU acceleration, and part-of-speech rules for words spelled alike but said differently (read, live, lead).
 
@@ -13,7 +15,7 @@ Out of scope: voice cloning with Kokoro (it has none; Record my voice stays a Ch
 Two throwaway spikes on 2026-09-19 (`scratchpad/kokoro-spike`, `scratchpad/phonemizer-spike`, with `FINDINGS.md`):
 
 - Kokoro runs through transformers.js and onnxruntime-node under Node, under Electron 44 and in an Electron utility process. No Python.
-- fp16 model: 163 MB, about 0.8 s per line with the old path; 0.42 s per line including our G2P step. Output is 24 kHz mono, the app's own sample rate.
+- fp32 model (`model.onnx`, about 325 MB; the fp16 model gave silent audio on CPU): about 0.46 s per line including our G2P step. Output is 24 kHz mono, the app's own sample rate.
 - 28 English voices (US and UK, female and male).
 - A GPL-free text-to-phoneme step (G2P) works: Misaki's word lists plus Misaki's small fallback model, ported to JavaScript. It covered 100% of the dialogue words in the sample script. Its only audible differences from espeak were proper names.
 
@@ -22,7 +24,7 @@ Two throwaway spikes on 2026-09-19 (`scratchpad/kokoro-spike`, `scratchpad/phone
 - Nothing GPL or LGPL ships. `kokoro-js` is not used, because it imports the `phonemizer` package, which contains espeak-ng (GPL-3.0). About 10 lines of transformers.js calls replace it.
 - `sharp` (pulled in by transformers.js, with an LGPL-3.0 image library) is replaced with an empty stub through npm `overrides`. The voice engine never uses it.
 - A `THIRD_PARTY_NOTICES.md` in the app lists every shipped or downloaded component with its license text: Kokoro-82M and its voices (Apache-2.0), transformers.js (Apache-2.0), onnxruntime (MIT), the Misaki G2P port and data (Apache-2.0, noted as modified), the fallback G2P weights (Apache-2.0), number-to-words (MIT), and their small dependencies.
-- **Release gate:** Misaki's word lists have no statement of where their data came from. Mariano opens an issue on hexgrad/misaki to ask. Kokoro does not ship in a public release until the answer shows the data is permissive. If it does not, the word lists are rebuilt from CMUdict (BSD-2) with the mapping already written in the spike (86% agreement), and the fallback model is either retrained on that list or left out.
+- **Release switch:** Misaki's word lists have no statement of where their data came from. Mariano opens an issue on hexgrad/misaki to ask. `server/kokoro/release-gate.json` hides the built-in voices from everyone until `misakiProvenanceCleared` is set to `true`, which waits on that answer; a developer can turn them on for their own copy with `SCRIPT_GLOW_EXPERIMENTAL_KOKORO=1`. If the answer does not show the data is permissive, the word lists are rebuilt from CMUdict (BSD-2) with the mapping already written in the spike (86% agreement), and the fallback model is either retrained on that list or left out.
 
 ## Parts
 
@@ -41,14 +43,14 @@ Two throwaway spikes on 2026-09-19 (`scratchpad/kokoro-spike`, `scratchpad/phone
 
 ### 3. Model files: downloaded on first use
 
-- Files: the fp16 model, the English voice packs, the tokenizer files, the Misaki US and GB word lists, and the two small fallback G2P models. About 185 MB in total.
+- Files: the fp32 model (`model.onnx`, about 325 MB), the English voice packs, the tokenizer files, the Misaki US and GB word lists, and the two small fallback G2P models. About 360 MB in total.
 - They are published once as assets of a GitHub release in the Script Glow repository (for example tag `kokoro-assets-v1`), so there is one pinned place to download from. The app carries a manifest with each file's URL, size and SHA-256, and refuses a file whose hash does not match.
 - They are stored in the user folder: `<SCRIPT_GLOW_HOME or userData>/models/kokoro-v1/`. The download resumes after an interruption and writes each file to a temporary name first, so a half-downloaded file is never used.
 - The installer size does not change, except for the runtime (about 55 MB zipped for onnxruntime-node).
 
 ### 4. First run and Settings
 
-- The welcome gets a new first choice, marked recommended: **Free voices on this computer**, "No setup. Works on any laptop. Downloads about 185 MB once." Choosing it sets the engine to `kokoro`, saves at once (auto-save), and starts the download with a progress bar. The cast can be set up while it downloads, and rendering waits for it.
+- The welcome gets a new first choice, marked recommended: **Free voices on this computer**, "No setup. Works on any laptop. Downloads about 360 MB once." Choosing it sets the engine to `kokoro`, saves at once (auto-save), and starts the download with a progress bar. The cast can be set up while it downloads, and rendering waits for it.
 - Settings gets a fourth engine card: **Built-in voices**, "Free · Private · No setup". While the files download, the card shows progress; once done, "Ready". A **Remove downloaded voices** link frees the space.
 - A slow or failed download says what happened and offers **Try again**. The other engines stay available.
 
@@ -75,7 +77,7 @@ Two throwaway spikes on 2026-09-19 (`scratchpad/kokoro-spike`, `scratchpad/phone
 
 ## Risks
 
-- The Misaki word-list provenance (release gate above).
+- The Misaki word-list provenance (release switch above).
 - Speed on a low-end Windows laptop is unknown. Measure before release. If it is slower than about 2 s per line, render a scene ahead in the background.
 - Some Kokoro voices sound flat for emotional lines. The engine card lists the best-rated voices first.
-- 185 MB is a large first download on a slow connection. The progress bar and resume help.
+- 360 MB is a large first download on a slow connection. The progress bar and resume help.
