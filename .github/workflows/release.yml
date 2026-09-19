@@ -15,22 +15,6 @@ jobs:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Mac: Developer ID certificate and notarization.
-      CSC_LINK: ${{ secrets.CSC_LINK }}
-      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      # Windows: Azure Trusted Signing.
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-      AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
-      AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
-      AZURE_CERT_PROFILE: ${{ vars.AZURE_CERT_PROFILE }}
-      AZURE_PUBLISHER_NAME: ${{ vars.AZURE_PUBLISHER_NAME }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -42,5 +26,79 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Validate signing secrets present
+        shell: bash
+        env:
+          # Mac: Developer ID certificate and notarization.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows: Azure Trusted Signing.
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_CERT_PROFILE: ${{ vars.AZURE_CERT_PROFILE }}
+          AZURE_PUBLISHER_NAME: ${{ vars.AZURE_PUBLISHER_NAME }}
+        run: |
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            missing=""
+            [[ -z "$CSC_LINK" ]] && missing="$missing CSC_LINK"
+            [[ -z "$CSC_KEY_PASSWORD" ]] && missing="$missing CSC_KEY_PASSWORD"
+            [[ -z "$APPLE_ID" ]] && missing="$missing APPLE_ID"
+            [[ -z "$APPLE_APP_SPECIFIC_PASSWORD" ]] && missing="$missing APPLE_APP_SPECIFIC_PASSWORD"
+            [[ -z "$APPLE_TEAM_ID" ]] && missing="$missing APPLE_TEAM_ID"
+            if [[ -n "$missing" ]]; then
+              echo "Error: Missing Mac signing secrets:$missing" >&2
+              exit 1
+            fi
+          elif [[ "${{ runner.os }}" == "Windows" ]]; then
+            missing=""
+            [[ -z "$AZURE_TENANT_ID" ]] && missing="$missing AZURE_TENANT_ID"
+            [[ -z "$AZURE_CLIENT_ID" ]] && missing="$missing AZURE_CLIENT_ID"
+            [[ -z "$AZURE_CLIENT_SECRET" ]] && missing="$missing AZURE_CLIENT_SECRET"
+            [[ -z "$AZURE_SIGNING_ENDPOINT" ]] && missing="$missing AZURE_SIGNING_ENDPOINT"
+            [[ -z "$AZURE_SIGNING_ACCOUNT" ]] && missing="$missing AZURE_SIGNING_ACCOUNT"
+            [[ -z "$AZURE_CERT_PROFILE" ]] && missing="$missing AZURE_CERT_PROFILE"
+            [[ -z "$AZURE_PUBLISHER_NAME" ]] && missing="$missing AZURE_PUBLISHER_NAME"
+            if [[ -n "$missing" ]]; then
+              echo "Error: Missing Windows signing secrets:$missing" >&2
+              exit 1
+            fi
+          fi
+      - name: Check release not already published
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          release_json=$(gh release view "${{ github.ref_name }}" --json isDraft 2>/dev/null || echo "{}")
+          if [[ -n "$release_json" && "$release_json" != "{}" ]]; then
+            is_draft=$(echo "$release_json" | jq -r '.isDraft // false')
+            if [[ "$is_draft" != "true" ]]; then
+              echo "Error: Release ${{ github.ref_name }} already exists and is published. Aborting to prevent overwriting." >&2
+              exit 1
+            fi
+          fi
       # Uploads to a draft release. Mariano checks the files and publishes it by hand.
-      - run: npx electron-builder --config desktop/builder.cjs --publish always
+      - name: Build and publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Mac: Developer ID certificate and notarization.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows: Azure Trusted Signing.
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_CERT_PROFILE: ${{ vars.AZURE_CERT_PROFILE }}
+          AZURE_PUBLISHER_NAME: ${{ vars.AZURE_PUBLISHER_NAME }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --config desktop/builder.cjs --publish always
