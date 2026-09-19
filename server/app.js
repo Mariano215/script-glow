@@ -72,7 +72,7 @@ async function fetchBounded(url, options = {}, max = 25 * 1024 * 1024) {
   return Buffer.concat(chunks);
 }
 
-export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = path.resolve(cacheDir) === path.join(HOME, '.cache') ? path.join(HOME, 'data', 'projects') : path.join(cacheDir, 'projects'), previewDir = path.join(HOME, 'data', 'voice-previews'), connections = DEFAULT_CONNECTIONS, connectionsFile = CONNECTIONS_FILE, secretsFile = SECRETS_FILE, serviceFetch = fetchBounded } = {}) {
+export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = path.resolve(cacheDir) === path.join(HOME, '.cache') ? path.join(HOME, 'data', 'projects') : path.join(cacheDir, 'projects'), previewDir = path.join(HOME, 'data', 'voice-previews'), connections = DEFAULT_CONNECTIONS, connectionsFile = CONNECTIONS_FILE, secretsFile = SECRETS_FILE, serviceFetch = fetchBounded, firstRunScreen = false } = {}) {
   const secrets = createSecrets(secretsFile);
   const hosted = hostedVoices({ serviceFetch, secrets }), hostedModels = hostedText({ serviceFetch, secrets });
   // The profile can be rewritten from the Settings screen, so every use reads it live.
@@ -128,7 +128,9 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
   app.get('/api/session', (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({ session }); });
   app.get('/api/connections', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ ...profile, casting: { ...profile.casting, ...(await hasPrivatePreview() ? { previewUrl: '/private-voice-preview.wav' } : {}) }, adapters: { chatterbox: 'named-voice-wav-v1', whisperx: 'multipart-transcriptions-v1', ollama: 'generate-v1' }, engines: Object.fromEntries(Object.entries(ENGINES).map(([name, spec]) => [name, { label: spec.label, model: spec.model, models: spec.models }])), textEngines: Object.fromEntries(Object.entries(TEXT_ENGINES).map(([name, spec]) => [name, { label: spec.label, model: spec.model, models: spec.models }])) });
+    // A new install has no profile file yet. Any save writes one, so the welcome shows until then.
+    const firstRun = firstRunScreen && !(await stat(connectionsFile).then(() => true, () => false));
+    res.json({ firstRun, ...profile, casting: { ...profile.casting, ...(await hasPrivatePreview() ? { previewUrl: '/private-voice-preview.wav' } : {}) }, adapters: { chatterbox: 'named-voice-wav-v1', whisperx: 'multipart-transcriptions-v1', ollama: 'generate-v1' }, engines: Object.fromEntries(Object.entries(ENGINES).map(([name, spec]) => [name, { label: spec.label, model: spec.model, models: spec.models }])), textEngines: Object.fromEntries(Object.entries(TEXT_ENGINES).map(([name, spec]) => [name, { label: spec.label, model: spec.model, models: spec.models }])) });
   });
   app.put('/api/connections', async (req, res) => {
     // Changing the engine in the middle of a render would mix two voices into one scene.

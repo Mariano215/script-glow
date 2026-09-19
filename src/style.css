@@ -110,3 +110,4 @@ h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus{outline:none}
 .trim-points,.trim-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:10px;font-size:14px}
 .trim-actions .text-link{text-decoration:underline}
 .trim-panel progress{width:100%;margin-top:10px;accent-color:#4f7040}
+.first-run{width:min(560px,calc(100vw - 30px))}.first-run h2{margin:0 0 8px;font-size:24px;font-weight:500}.first-run>p{margin:0 0 20px;color:#5b645d}.first-run-choices{display:grid;gap:10px}.first-run-choices button{display:grid;gap:4px;text-align:left;padding:14px 16px;border:1px solid var(--border);border-radius:9px;background:#fff}.first-run-choices button:hover{border-color:#cf923f;background:#fffaf0}.first-run-choices strong{font-weight:600}.first-run-choices span{font-size:13px;color:#5b645d}

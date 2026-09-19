@@ -699,6 +699,36 @@ async function saveServices() {
   } catch (error) { settingsNotice = error instanceof Error ? error.message : 'Settings could not be saved.'; settingsError = true; }
   finally { settingsBusy = ''; render(); }
 }
+// A new install has no settings file. Skip saves the defaults. The other two choices open Settings,
+// where Save writes the file, so the welcome comes back at the next launch until voices are set up.
+let firstRunShown = false;
+function showFirstRun() {
+  if (firstRunShown) return;
+  firstRunShown = true;
+  const dialog = document.createElement('dialog');
+  dialog.className = 'first-run';
+  dialog.setAttribute('aria-labelledby', 'first-run-title');
+  dialog.innerHTML = `<h2 id="first-run-title">Welcome to Script Glow</h2>
+    <p>Choose who reads the other parts. You can change this at any time in Settings.</p>
+    <div class="first-run-choices">
+      <button type="button" data-choice="hosted"><strong>Use a paid voice service</strong><span>OpenAI, Google Gemini or ElevenLabs. Works on any laptop. You need an API key from the service.</span></button>
+      <button type="button" data-choice="own"><strong>I have my own voice server</strong><span>Chatterbox on this computer or another one. Free and private.</span></button>
+      <button type="button" data-choice="skip"><strong>Skip for now</strong><span>Look around with the sample script. The cast cannot read until you choose a voice service.</span></button>
+    </div>`;
+  dialog.addEventListener('click', async event => {
+    const choice = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-choice]')?.dataset.choice;
+    if (!choice) return;
+    dialog.close();
+    await loadSettings(true);
+    if (choice === 'skip') { await saveServices(); return; }
+    if (settingsDraft) settingsDraft.voice.engine = choice === 'hosted' ? 'openai' : 'chatterbox';
+    render();
+    if (location.hash !== '#settings') location.hash = '#settings';
+  });
+  dialog.addEventListener('close', () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+}
 async function changeKey(provider: string, remove: boolean) {
   const key = (keyDrafts[provider] ?? '').trim();
   if (!remove && !key) { settingsNotice = 'Paste a key first.'; settingsError = true; render(); return; }
@@ -1316,7 +1346,7 @@ function progressMarkup() {
   return `<div class="job-label"><span>${job.status === 'queued' ? (hostedEngine() ? `Queued for ${engineName()}` : 'Queued for the local GPU') : `${job.completed} of ${job.total} lines generated`}</span><button data-action="cancel">Cancel</button></div><progress max="${job.total || 1}" value="${job.completed}"></progress><small class="cold-start">The first time can take a few minutes.</small>`;
 }
 async function connect(restoreOnStartup = false) {
-  const responses = await Promise.allSettled([api<{ tts: { ok: boolean } }>('/api/health'), api<{ voices: string[]; engine?: string; details?: typeof liveVoices }>('/api/voices'), api<{ casting: typeof castingConfig; voice?: { engine: string } }>('/api/connections')]);
+  const responses = await Promise.allSettled([api<{ tts: { ok: boolean } }>('/api/health'), api<{ voices: string[]; engine?: string; details?: typeof liveVoices }>('/api/voices'), api<{ casting: typeof castingConfig; voice?: { engine: string }; firstRun?: boolean }>('/api/connections')]);
   if (responses[2].status === 'fulfilled') voiceEngine = responses[2].value.voice?.engine ?? 'chatterbox';
   profileReady = responses[2].status === 'fulfilled';
   if (responses[2].status === 'fulfilled') castingConfig = { ...castingConfig, ...responses[2].value.casting };
@@ -1330,6 +1360,7 @@ async function connect(restoreOnStartup = false) {
   castDefaults();
   if (previousCast !== JSON.stringify(prefs.cast) || restoreOnStartup && generation === 0 && !result && !busy()) invalidate(true);
   persist(); render(); void guessNames();
+  if (responses[2].status === 'fulfilled' && responses[2].value.firstRun) showFirstRun();
 }
 async function renderScene(playWhenReady = false) {
   const startingProject = projectId;
