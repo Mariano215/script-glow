@@ -9,7 +9,7 @@ import n2w from 'number-to-words';
 // Change this whenever a rule below changes, so the line cache never reuses audio made by old rules.
 export const G2P_VERSION = 'misaki-js-1';
 // Kokoro's punctuation. Everything else that is not a letter is dropped.
-const PUNCT = ';:,.!?—…"“”()';
+const PUNCT = ';:,.!?\u2014…"“”()';
 const VOWELS = new Set('AIOQWYaiuæɑɒɔəɛɜɪʊʌᵻ');
 const STRESS = /[ˈˌ]/g;
 
@@ -114,7 +114,7 @@ export function createG2P({ gold, silver, fallback, british = false }) {
     // Accents go (Zoë reads as Zoe), curly apostrophes straighten, Mr. and friends lose the period.
     text = numberWords(text.normalize('NFD').replace(/\p{M}/gu, '').replace(/[‘’]/g, "'")
       .replace(/\b(Mr|Mrs|Ms|Dr|St)\.(?= [A-Z])/g, '$1').replace(/\s+/g, ' ').trim());
-    const tokens = (text.match(/[A-Za-z]+(?:['-][A-Za-z]+)*'?|[;:,.!?—…"“”()]+|\S/g) ?? [])
+    const tokens = (text.match(/[A-Za-z]+(?:['-][A-Za-z]+)*'?|[;:,.!?\u2014…"“”()]+|\S/g) ?? [])
       .flatMap(token => token.includes('-') && !respelling(token) ? token.split('-') : [token]);
     const out = [];
     for (let i = 0; i < tokens.length; i++) {
