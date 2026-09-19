@@ -294,9 +294,13 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
     try { text = await new Promise((resolve, reject) => {
       // PDF.js loads native canvas helpers. A subprocess isolates native runtime
       // failures and teardown from the API process (worker threads do not).
-      const worker = fork(new URL('./pdf-worker.js', import.meta.url), [], {
+      // Inside the desktop app process.execPath is Electron, which runs as plain Node only with
+      // ELECTRON_RUN_AS_NODE. The worker is unpacked from the app archive, so it is read from there.
+      const workerFile = fileURLToPath(new URL('./pdf-worker.js', import.meta.url)).replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
+      const worker = fork(workerFile, [], {
         execArgv: ['--max-old-space-size=256'], serialization: 'advanced',
         stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true,
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
       });
       let received = false;
       const timer = setTimeout(() => { worker.kill(); reject(fail('PDF extraction timed out. Try a smaller PDF or paste text.', 422)); }, 30000);
