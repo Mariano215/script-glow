@@ -27,6 +27,20 @@ async function withServer(options, fn) {
   try { await fn(`http://127.0.0.1:${server.address().port}`); }
   finally { await new Promise(resolve => server.close(resolve)); }
 }
+test('the first-run flag is on only for a new install, and a save turns it off', () => temporary(async dir => {
+  const connectionsFile = path.join(dir, 'connections.json');
+  const options = { connectionsFile, secretsFile: path.join(dir, 'secrets.json'), cacheDir: path.join(dir, 'cache') };
+  await withServer(options, async base => {
+    assert.equal((await (await fetch(`${base}/api/connections`)).json()).firstRun, false, 'Off unless the app asks for it');
+  });
+  await withServer({ ...options, firstRunScreen: true }, async base => {
+    assert.equal((await (await fetch(`${base}/api/connections`)).json()).firstRun, true);
+    const saved = await fetch(`${base}/api/connections`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(profile()) });
+    assert.equal(saved.status, 200);
+    assert.equal((await (await fetch(`${base}/api/connections`)).json()).firstRun, false);
+  });
+}));
+
 async function render(base) {
   const accepted = await post(base, '/api/render', input); assert.equal(accepted.status, 202);
   const { jobId } = await accepted.json();

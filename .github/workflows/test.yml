@@ -43,3 +43,27 @@ jobs:
       # soundfile is what torchaudio writes WAV with on Linux; Chatterbox brings it in a real install.
       - run: pip install fastapi==0.136.1 "uvicorn[standard]==0.46.0" httpx soundfile numpy
       - run: python test_server.py
+
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # Unsigned test build: signing belongs to the release workflow.
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # Playwright drives the app through --inspect, so this test build keeps that fuse on.
+      # The release build never sets it (desktop/builder.cjs).
+      SCRIPT_GLOW_INSPECTABLE_BUILD: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run dist:dir
+      - run: node verification/desktop.mjs

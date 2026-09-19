@@ -12,7 +12,8 @@ export const PROVIDERS = Object.freeze(['openai', 'gemini', 'elevenlabs', 'anthr
 // drive seen from WSL), while a user folder is private by default on every platform.
 const settingsHome = process.platform === 'win32' ? process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming') : process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
 export const SECRETS_FILE = process.env.SCRIPT_GLOW_SECRETS || path.join(settingsHome, 'script-glow', 'secrets.json');
-const OLD_SECRETS_FILE = fileURLToPath(new URL('../data/secrets.json', import.meta.url));
+// Keys were once kept in data/. The move looks there, in the same folder as the rest of the data.
+const OLD_SECRETS_FILE = process.env.SCRIPT_GLOW_HOME ? path.join(path.resolve(process.env.SCRIPT_GLOW_HOME), 'data', 'secrets.json') : fileURLToPath(new URL('../data/secrets.json', import.meta.url));
 const exists = file => stat(file).then(() => true, () => false);
 // The folder is private too, so its listing does not show what is kept there.
 // mkdir sets the mode only on a folder it makes, so an older folder is tightened as well.

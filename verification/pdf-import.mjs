@@ -25,7 +25,7 @@ let pdf = '%PDF-1.4\n'; const offsets = [0];
 objects.forEach((object, index) => { offsets.push(Buffer.byteLength(pdf)); pdf += `${index + 1} 0 obj\n${object}\nendobj\n`; });
 const xref = Buffer.byteLength(pdf);
 pdf += `xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map(offset => String(offset).padStart(10, '0') + ' 00000 n ').join('\n')}\ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-const response = await fetch('http://127.0.0.1:3001/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'screenplay.pdf', data: Buffer.from(pdf).toString('base64') }) });
+const response = await fetch(`${process.env.APP_URL || 'http://127.0.0.1:3001'}/api/import`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'screenplay.pdf', data: Buffer.from(pdf).toString('base64') }) });
 const body = await response.json();
 assert.ok(response.ok, JSON.stringify(body));
 const parsed = parseScript(body.text);

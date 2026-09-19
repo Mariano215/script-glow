@@ -12,7 +12,12 @@ import { createSecrets, SECRETS_FILE } from './secrets.js';
 import { ENGINES, TEXT_ENGINES, hostedText, hostedVoices } from './hosted.js';
 import { findFfmpeg } from './video.js';
 
+// Set only inside the desktop app's main process, where the PDF worker runs as a utility process.
+const utilityProcess = process.versions.electron && process.type === 'browser' ? (await import('electron')).utilityProcess : null;
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
+// Projects, cache and voice samples. The desktop app points this at the user's own folder,
+// because an installed app cannot write next to its code. The built page is always read from ROOT.
+const HOME = process.env.SCRIPT_GLOW_HOME ? path.resolve(process.env.SCRIPT_GLOW_HOME) : ROOT;
 const ID = /^[a-f0-9-]{36}$/;
 const loopback = (host) => ['localhost', '127.0.0.1', '[::1]'].includes(host);
 function fail(message, status = 400) { return Object.assign(new Error(message), { status }); }
@@ -69,7 +74,7 @@ async function fetchBounded(url, options = {}, max = 25 * 1024 * 1024) {
   return Buffer.concat(chunks);
 }
 
-export function createApp({ cacheDir = path.join(ROOT, '.cache'), projectsDir = path.resolve(cacheDir) === path.join(ROOT, '.cache') ? path.join(ROOT, 'data', 'projects') : path.join(cacheDir, 'projects'), previewDir = path.join(ROOT, 'data', 'voice-previews'), connections = DEFAULT_CONNECTIONS, connectionsFile = CONNECTIONS_FILE, secretsFile = SECRETS_FILE, serviceFetch = fetchBounded } = {}) {
+export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = path.resolve(cacheDir) === path.join(HOME, '.cache') ? path.join(HOME, 'data', 'projects') : path.join(cacheDir, 'projects'), previewDir = path.join(HOME, 'data', 'voice-previews'), connections = DEFAULT_CONNECTIONS, connectionsFile = CONNECTIONS_FILE, secretsFile = SECRETS_FILE, serviceFetch = fetchBounded, firstRunScreen = false } = {}) {
   const secrets = createSecrets(secretsFile);
   const hosted = hostedVoices({ serviceFetch, secrets }), hostedModels = hostedText({ serviceFetch, secrets });
   // The profile can be rewritten from the Settings screen, so every use reads it live.
@@ -125,7 +130,9 @@ export function createApp({ cacheDir = path.join(ROOT, '.cache'), projectsDir = 
   app.get('/api/session', (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({ session }); });
   app.get('/api/connections', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ ...profile, casting: { ...profile.casting, ...(await hasPrivatePreview() ? { previewUrl: '/private-voice-preview.wav' } : {}) }, adapters: { chatterbox: 'named-voice-wav-v1', whisperx: 'multipart-transcriptions-v1', ollama: 'generate-v1' }, engines: Object.fromEntries(Object.entries(ENGINES).map(([name, spec]) => [name, { label: spec.label, model: spec.model, models: spec.models }])), textEngines: Object.fromEntries(Object.entries(TEXT_ENGINES).map(([name, spec]) => [name, { label: spec.label, model: spec.model, models: spec.models }])) });
+    // A new install has no profile file yet. Any save writes one, so the welcome shows until then.
+    const firstRun = firstRunScreen && !(await stat(connectionsFile).then(() => true, () => false));
+    res.json({ firstRun, ...profile, casting: { ...profile.casting, ...(await hasPrivatePreview() ? { previewUrl: '/private-voice-preview.wav' } : {}) }, adapters: { chatterbox: 'named-voice-wav-v1', whisperx: 'multipart-transcriptions-v1', ollama: 'generate-v1' }, engines: Object.fromEntries(Object.entries(ENGINES).map(([name, spec]) => [name, { label: spec.label, model: spec.model, models: spec.models }])), textEngines: Object.fromEntries(Object.entries(TEXT_ENGINES).map(([name, spec]) => [name, { label: spec.label, model: spec.model, models: spec.models }])) });
   });
   app.put('/api/connections', async (req, res) => {
     // Changing the engine in the middle of a render would mix two voices into one scene.
@@ -289,16 +296,20 @@ export function createApp({ cacheDir = path.join(ROOT, '.cache'), projectsDir = 
     try { text = await new Promise((resolve, reject) => {
       // PDF.js loads native canvas helpers. A subprocess isolates native runtime
       // failures and teardown from the API process (worker threads do not).
-      const worker = fork(new URL('./pdf-worker.js', import.meta.url), [], {
-        execArgv: ['--max-old-space-size=256'], serialization: 'advanced',
-        stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true,
-      });
+      // The desktop app cannot run its own binary as Node (the RunAsNode fuse is off), so there the
+      // worker is an Electron utility process. It is unpacked from the app archive and read from there.
+      const workerFile = fileURLToPath(new URL('./pdf-worker.js', import.meta.url)).replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
+      // Both cap the worker's heap at 256 MB: a utility process takes V8 flags only through --js-flags.
+      const worker = utilityProcess
+        ? utilityProcess.fork(workerFile, [], { execArgv: ['--js-flags=--max-old-space-size=256'], stdio: 'ignore', serviceName: 'Script Glow PDF import' })
+        : fork(workerFile, [], { execArgv: ['--max-old-space-size=256'], serialization: 'advanced', stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true });
       let received = false;
       const timer = setTimeout(() => { worker.kill(); reject(fail('PDF extraction timed out. Try a smaller PDF or paste text.', 422)); }, 30000);
-      worker.once('message', message => { received = true; clearTimeout(timer); message.error ? reject(fail(message.error, 422)) : resolve(message.text); });
+      // A utility process keeps running after it answers, so it is stopped once the answer is in.
+      worker.once('message', message => { received = true; clearTimeout(timer); if (utilityProcess) worker.kill(); message.error ? reject(fail(message.error, 422)) : resolve(message.text); });
       worker.once('error', () => { clearTimeout(timer); reject(fail('Could not extract this PDF. Try an unlocked text PDF or paste text.', 422)); });
       worker.once('exit', () => { if (!received) { clearTimeout(timer); reject(fail('PDF extraction stopped. Try a smaller PDF or paste text.', 422)); } });
-      worker.send(data);
+      utilityProcess ? worker.postMessage(data) : worker.send(data);
     }); } finally { activeImports--; }
     res.json({ text });
   });

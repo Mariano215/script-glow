@@ -47,6 +47,20 @@ Browsers: current Chrome and Edge do everything. Firefox and Safari rehearse and
 
 ## Install
 
+### Download (Mac and Windows)
+
+Download Script Glow for your computer from the [latest release](https://github.com/Mariano215/script-glow/releases/latest):
+
+- Mac with Apple silicon (M1 or later): the `.dmg` whose name ends in `-arm64.dmg`.
+- Mac with an Intel processor: the `.dmg` whose name ends in `-x64.dmg`.
+- Windows: the `.exe`.
+
+Open it and follow the welcome screen. You do not need Node or a terminal.
+
+The app keeps your projects and settings in your user folder: `~/Library/Application Support/Script Glow` on a Mac, `%APPDATA%\Script Glow` on Windows. The key file for paid voice services stays in your user settings folder, the same one `npm start` uses: `~/.config/script-glow` on a Mac, `%APPDATA%\script-glow` on Windows.
+
+### From source
+
 ```sh
 git clone https://github.com/Mariano215/script-glow.git
 cd script-glow
@@ -111,6 +125,7 @@ Environment variables:
 | `PORT` | App port (default `3001`). A second copy on another port still shares `data/` and `.cache/`. |
 | `SCRIPT_GLOW_CONFIG` | Path of the connection profile (default `data/connections.json`). |
 | `SCRIPT_GLOW_SECRETS` | Path of the key file (default in your user settings folder, see below). |
+| `SCRIPT_GLOW_HOME` | Folder for `data/` and `.cache/` (default: the code folder). The desktop app sets it to your user folder. |
 | `SCRIPT_GLOW_FFMPEG` | Path of the FFmpeg program, when it is not on the PATH. |
 
 ### A voice server on another computer
@@ -126,6 +141,12 @@ npm run dev
 ```
 
 Open http://127.0.0.1:5173.
+
+Desktop window (development):
+
+```sh
+npm run desktop
+```
 
 Compiled app:
 

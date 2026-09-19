@@ -19,3 +19,4 @@ Thumbs.db
 # Planning notes and work logs: kept on this computer, not published.
 docs/internal/
 .vscode/
+release/

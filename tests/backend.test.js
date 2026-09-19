@@ -4,6 +4,9 @@ import { mkdtemp, rm, readdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import { fork } from 'node:child_process';
+import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
 import { createApp, speechChunks, validateRender } from '../server/app.js';
 import { decodeWav, encodeWav, assembleScene, SAMPLE_RATE } from '../server/audio.js';
 import { parseScript } from '../src/parser.ts';
@@ -280,6 +283,23 @@ test('PDF geometry preserves character blocks, wrapped dialogue, and stage direc
   assert.equal(malformed.status, 422);
   assert.equal((await fetch(base + '/api/health')).status, 200);
 }));
+
+test('the PDF worker also answers over Electron\'s parentPort channel', async () => {
+  // Electron's utilityProcess gives the worker process.parentPort instead of process.send.
+  // This preload fakes that port over the fork channel, so plain Node runs the same branch.
+  const preload = `const port = new (process.getBuiltinModule('node:events').EventEmitter)();
+    port.postMessage = message => process.send({ viaParentPort: message });
+    process.on('message', data => port.emit('message', { data }));
+    process.parentPort = port;`;
+  const worker = fork(fileURLToPath(new URL('../server/pdf-worker.js', import.meta.url)), [], {
+    execArgv: ['--import', `data:text/javascript,${encodeURIComponent(preload)}`], serialization: 'advanced', stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
+  });
+  try {
+    worker.send(Buffer.from('%PDF-1.7 broken file'));
+    const [reply] = await once(worker, 'message');
+    assert.equal(typeof reply.viaParentPort?.error, 'string');
+  } finally { worker.kill(); }
+});
 
 test('monologues longer than one TTS request render as sentence chunks under a single muted cue', async () => {
   const texts = [];

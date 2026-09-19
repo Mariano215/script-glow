@@ -1,0 +1,130 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      # electron-builder uploads to v<package.json version>, not to the pushed tag. A tag that
+      # does not match would upload nothing and still pass, so it stops the release here.
+      - name: Check the tag matches package.json
+        shell: bash
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          expected="v$(node -p "require('./package.json').version")"
+          if [[ "$TAG_NAME" != "$expected" ]]; then
+            echo "Error: tag $TAG_NAME does not match the package.json version $expected. Push a tag that matches package.json." >&2
+            exit 1
+          fi
+          echo "Tag $TAG_NAME matches package.json."
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Validate signing secrets present
+        shell: bash
+        env:
+          # Mac: Developer ID certificate and notarization.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows: Azure Trusted Signing.
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_CERT_PROFILE: ${{ vars.AZURE_CERT_PROFILE }}
+          AZURE_PUBLISHER_NAME: ${{ vars.AZURE_PUBLISHER_NAME }}
+        run: |
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            missing=""
+            [[ -z "$CSC_LINK" ]] && missing="$missing CSC_LINK"
+            [[ -z "$CSC_KEY_PASSWORD" ]] && missing="$missing CSC_KEY_PASSWORD"
+            [[ -z "$APPLE_ID" ]] && missing="$missing APPLE_ID"
+            [[ -z "$APPLE_APP_SPECIFIC_PASSWORD" ]] && missing="$missing APPLE_APP_SPECIFIC_PASSWORD"
+            [[ -z "$APPLE_TEAM_ID" ]] && missing="$missing APPLE_TEAM_ID"
+            if [[ -n "$missing" ]]; then
+              echo "Error: Missing Mac signing secrets:$missing" >&2
+              exit 1
+            fi
+          elif [[ "$RUNNER_OS" == "Windows" ]]; then
+            missing=""
+            [[ -z "$AZURE_TENANT_ID" ]] && missing="$missing AZURE_TENANT_ID"
+            [[ -z "$AZURE_CLIENT_ID" ]] && missing="$missing AZURE_CLIENT_ID"
+            [[ -z "$AZURE_CLIENT_SECRET" ]] && missing="$missing AZURE_CLIENT_SECRET"
+            [[ -z "$AZURE_SIGNING_ENDPOINT" ]] && missing="$missing AZURE_SIGNING_ENDPOINT"
+            [[ -z "$AZURE_SIGNING_ACCOUNT" ]] && missing="$missing AZURE_SIGNING_ACCOUNT"
+            [[ -z "$AZURE_CERT_PROFILE" ]] && missing="$missing AZURE_CERT_PROFILE"
+            [[ -z "$AZURE_PUBLISHER_NAME" ]] && missing="$missing AZURE_PUBLISHER_NAME"
+            if [[ -n "$missing" ]]; then
+              echo "Error: Missing Windows signing secrets:$missing" >&2
+              exit 1
+            fi
+          fi
+      - name: Check release not already published
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          REPO_NAME: ${{ github.repository }}
+        run: |
+          set +e
+          output=$(gh release view "$TAG_NAME" --repo "$REPO_NAME" --json isDraft --jq .isDraft 2>&1)
+          exit_code=$?
+          set -e
+
+          if [[ $exit_code -eq 0 ]]; then
+            if [[ "$output" == "true" ]]; then
+              echo "Release is a draft, proceeding to publish..."
+            else
+              echo "Error: Release $TAG_NAME is already published. Aborting to prevent overwriting." >&2
+              exit 1
+            fi
+          elif echo "$output" | grep -q "release not found"; then
+            echo "No release found yet, creating a new one..."
+          else
+            echo "Error checking release status:" >&2
+            echo "$output" >&2
+            exit 1
+          fi
+      # Uploads to a draft release. Mariano checks the files and publishes it by hand.
+      - name: Build and publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Mac: Developer ID certificate and notarization.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows: Azure Trusted Signing.
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_CERT_PROFILE: ${{ vars.AZURE_CERT_PROFILE }}
+          AZURE_PUBLISHER_NAME: ${{ vars.AZURE_PUBLISHER_NAME }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --config desktop/builder.cjs --publish always
