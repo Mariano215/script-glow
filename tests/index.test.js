@@ -10,7 +10,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
-test('a taken port stops startup with an error and a non-zero exit', async () => {
+// The timeout turns a regression (a server that keeps running) into a failure instead of a hang.
+test('a taken port stops startup with an error and a non-zero exit', { timeout: 30000 }, async () => {
   const blocker = http.createServer().listen(0, '127.0.0.1');
   await once(blocker, 'listening');
   const home = await mkdtemp(path.join(os.tmpdir(), 'script-glow-port-'));

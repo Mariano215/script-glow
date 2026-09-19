@@ -72,6 +72,7 @@ module.exports = {
   // it needs no other sibling from server/.
   asarUnpack: ['server/pdf-worker.js', 'server/pdf-text.js', 'node_modules/pdfjs-dist/**', 'node_modules/@napi-rs/**'],
   mac: {
+    artifactName: '${productName}-${version}-${arch}.${ext}',
     target: [{ target: 'dmg', arch: ['arm64', 'x64'] }, { target: 'zip', arch: ['arm64', 'x64'] }],
     icon: 'public/brand/script-glow-mark-v2.png',
     category: 'public.app-category.entertainment',

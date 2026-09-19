@@ -49,9 +49,15 @@ Browsers: current Chrome and Edge do everything. Firefox and Safari rehearse and
 
 ### Download (Mac and Windows)
 
-Download Script Glow for your computer from the [latest release](https://github.com/Mariano215/script-glow/releases/latest): the `.dmg` for a Mac, or the `.exe` for Windows. Open it and follow the welcome screen. You do not need Node or a terminal.
+Download Script Glow for your computer from the [latest release](https://github.com/Mariano215/script-glow/releases/latest):
 
-The app keeps your projects and settings in your user folder: `~/Library/Application Support/Script Glow` on a Mac, `%APPDATA%\Script Glow` on Windows.
+- Mac with Apple silicon (M1 or later): the `.dmg` whose name ends in `-arm64.dmg`.
+- Mac with an Intel processor: the `.dmg` whose name ends in `-x64.dmg`.
+- Windows: the `.exe`.
+
+Open it and follow the welcome screen. You do not need Node or a terminal.
+
+The app keeps your projects and settings in your user folder: `~/Library/Application Support/Script Glow` on a Mac, `%APPDATA%\Script Glow` on Windows. The key file for paid voice services stays in your user settings folder, the same one `npm start` uses: `~/.config/script-glow` on a Mac, `%APPDATA%\script-glow` on Windows.
 
 ### From source
 

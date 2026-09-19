@@ -27,7 +27,7 @@ async function main() {
   window = new BrowserWindow({ width: 1440, height: 960, title: 'Script Glow', webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
   // Voice credits and help links open in the default browser. Nothing else opens a window.
   window.webContents.setWindowOpenHandler(({ url }) => { if (url.startsWith('https://')) void shell.openExternal(url); return { action: 'deny' }; });
-  window.webContents.on('will-navigate', (event, url) => { if (new URL(url).origin !== origin) event.preventDefault(); });
+  window.webContents.on('will-navigate', (event, url) => { if (originOf(url) !== origin) event.preventDefault(); });
   await window.loadURL(origin);
   // Updates come from the GitHub Release. A failed check must never stop the app.
   if (app.isPackaged) updater.autoUpdater.checkForUpdatesAndNotify().catch(error => console.warn('Update check failed:', error.message));

@@ -37,7 +37,7 @@ Today `data/` and `.cache/` sit next to the code (`server/app.js:15`, `server/co
 
 ### 4. PDF import inside Electron
 
-`server/app.js` starts `pdf-worker.js` with `fork`. In Electron, `process.execPath` is the Electron program, so the fork gets `ELECTRON_RUN_AS_NODE=1` in its environment. The `server/` folder is listed in `asarUnpack` so the worker file is a real file on disk. Without both, PDF import fails only in the installed app.
+`server/app.js` starts `pdf-worker.js` with `child_process.fork` under plain Node. In the desktop app's main process it uses Electron's `utilityProcess.fork` instead, because the packed app turns off the `RunAsNode` fuse (along with `NODE_OPTIONS` and `--inspect`), so its binary cannot be run as Node by any local program. The worker answers over `process.parentPort` there and over `process.send` under Node. The worker files are listed in `asarUnpack` so they are real files on disk. The heap cap is `--max-old-space-size=256` under Node and `--js-flags=--max-old-space-size=256` for the utility process.
 
 ### 5. First-run screen
 
@@ -66,7 +66,15 @@ A new workflow, `.github/workflows/release.yml`, runs on a `v*` tag:
 - Windows: signs with Azure Trusted Signing.
 - Uploads the files to a draft GitHub Release. Mariano publishes it by hand.
 
-GitHub secrets needed: `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, plus the Trusted Signing account and profile names. Until they exist, the workflow builds unsigned files so everything else can be tested.
+GitHub secrets needed: `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, plus the Trusted Signing account and profile names.
+
+The release stops with a clear message, before anything is built or uploaded, when:
+
+- the pushed tag is not `v` plus the `package.json` version (electron-builder uploads to the `package.json` version, not to the tag);
+- a signing secret is missing, so the workflow never makes an unsigned release;
+- the tag's release is already published (a draft is updated).
+
+Unsigned test builds come from the `desktop` job in `.github/workflows/test.yml`, which packs the app and runs the Electron smoke test on every push and pull request.
 
 ## Tests
 
