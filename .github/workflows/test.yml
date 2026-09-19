@@ -50,6 +50,7 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     env:
       # Unsigned test build: signing belongs to the release workflow.
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
