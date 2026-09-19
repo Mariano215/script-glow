@@ -13,6 +13,9 @@ import { ENGINES, TEXT_ENGINES, hostedText, hostedVoices } from './hosted.js';
 import { findFfmpeg } from './video.js';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
+// Projects, cache and voice samples. The desktop app points this at the user's own folder,
+// because an installed app cannot write next to its code. The built page is always read from ROOT.
+const HOME = process.env.SCRIPT_GLOW_HOME ? path.resolve(process.env.SCRIPT_GLOW_HOME) : ROOT;
 const ID = /^[a-f0-9-]{36}$/;
 const loopback = (host) => ['localhost', '127.0.0.1', '[::1]'].includes(host);
 function fail(message, status = 400) { return Object.assign(new Error(message), { status }); }
@@ -69,7 +72,7 @@ async function fetchBounded(url, options = {}, max = 25 * 1024 * 1024) {
   return Buffer.concat(chunks);
 }
 
-export function createApp({ cacheDir = path.join(ROOT, '.cache'), projectsDir = path.resolve(cacheDir) === path.join(ROOT, '.cache') ? path.join(ROOT, 'data', 'projects') : path.join(cacheDir, 'projects'), previewDir = path.join(ROOT, 'data', 'voice-previews'), connections = DEFAULT_CONNECTIONS, connectionsFile = CONNECTIONS_FILE, secretsFile = SECRETS_FILE, serviceFetch = fetchBounded } = {}) {
+export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = path.resolve(cacheDir) === path.join(HOME, '.cache') ? path.join(HOME, 'data', 'projects') : path.join(cacheDir, 'projects'), previewDir = path.join(HOME, 'data', 'voice-previews'), connections = DEFAULT_CONNECTIONS, connectionsFile = CONNECTIONS_FILE, secretsFile = SECRETS_FILE, serviceFetch = fetchBounded } = {}) {
   const secrets = createSecrets(secretsFile);
   const hosted = hostedVoices({ serviceFetch, secrets }), hostedModels = hostedText({ serviceFetch, secrets });
   // The profile can be rewritten from the Settings screen, so every use reads it live.

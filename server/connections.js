@@ -42,7 +42,8 @@ export function validateConnections(value) {
   if (!object(value.casting.aliases) || Object.keys(value.casting.aliases).length > 100 || Object.entries(value.casting.aliases).some(([key, target]) => !text(key, 100) || !text(target, 100) || key === target || Object.hasOwn(value.casting.aliases, target))) throw new Error('Voice aliases must map directly to a distinct canonical voice.');
   return { version: 1, name: value.name, voice: { engine: voice.engine, model: voice.model }, names: { engine: names.engine, model: names.model }, chatterbox: { url: url(value.chatterbox.url), cacheNamespace: value.chatterbox.cacheNamespace, legacyCache: value.chatterbox.legacyCache }, whisperx: { url: url(value.whisperx.url) }, ollama: { url: url(value.ollama.url), model: value.ollama.model }, casting: { preferredActorVoice: value.casting.preferredActorVoice, aliases: { ...value.casting.aliases } } };
 }
-export const CONNECTIONS_FILE = fileURLToPath(new URL('../data/connections.json', import.meta.url));
+// The desktop app keeps the profile in the user's folder, because it cannot write next to its code.
+export const CONNECTIONS_FILE = process.env.SCRIPT_GLOW_HOME ? path.join(path.resolve(process.env.SCRIPT_GLOW_HOME), 'data', 'connections.json') : fileURLToPath(new URL('../data/connections.json', import.meta.url));
 // Written whole or not at all: a half-written profile would leave the app unable to start.
 export async function saveConnections(filename, value) {
   const profile = validateConnections(value);
