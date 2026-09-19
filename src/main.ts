@@ -720,7 +720,11 @@ function showFirstRun() {
     if (!choice) return;
     dialog.close();
     await loadSettings(true);
-    if (choice === 'skip') { await saveServices(); return; }
+    if (choice === 'skip') {
+      await saveServices();
+      if (settingsError) flash(settingsNotice || 'The default voices could not be saved.', true);
+      return;
+    }
     if (settingsDraft) settingsDraft.voice.engine = choice === 'hosted' ? 'openai' : 'chatterbox';
     render();
     if (location.hash !== '#settings') location.hash = '#settings';

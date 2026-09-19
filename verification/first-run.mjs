@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createApp } from '../server/app.js';
@@ -47,6 +47,30 @@ try {
   await page.click('[data-choice="own"]');
   await until(page, 'Settings on Chatterbox', () => location.hash === '#settings' && !!document.querySelector('#service-engine-chatterbox:checked'));
   console.log('PASS: the welcome shows for a new install, leads to Settings, and Skip saves the defaults once.');
+
+  // A Skip that cannot save must not vanish silently. The connections file's folder is a plain
+  // file here, so the write fails, and the actor should still see an error on screen.
+  const blockedDir = path.join(temp, 'blocked');
+  await writeFile(blockedDir, '');
+  const blockedFile = path.join(blockedDir, 'connections.json');
+  const blockedApp = createApp({ cacheDir: path.join(temp, 'blocked-cache'), projectsDir: path.join(temp, 'blocked-projects'), previewDir: path.join(temp, 'blocked-previews'), connectionsFile: blockedFile, secretsFile: path.join(temp, 'blocked-secrets.json'), connections: DEFAULT_CONNECTIONS, firstRunScreen: true,
+    serviceFetch: async url => { throw new Error(`nothing is listening on ${url}`); } });
+  const blockedServer = blockedApp.listen(0, '127.0.0.1');
+  await new Promise(resolve => blockedServer.once('listening', resolve));
+  const blockedBase = `http://127.0.0.1:${blockedServer.address().port}`;
+  try {
+    const blockedPage = await browser.newPage();
+    await blockedPage.goto(`${blockedBase}/#rehearsal`);
+    await until(blockedPage, 'the welcome on the blocked install', () => !!document.querySelector('dialog.first-run[open]'));
+    await blockedPage.click('[data-choice="skip"]');
+    // ".voices-offline" is a separate, always-present notice while no voice service answers;
+    // excluding it isolates the one flash() puts up for the failed save.
+    await until(blockedPage, 'the failed-Skip error', () => !!document.querySelector('.notice.error:not(.voices-offline)'));
+    assert.equal(await exists(blockedFile), false, 'The failed save left no file behind');
+    console.log('PASS: a failed Skip shows its error instead of vanishing.');
+  } finally {
+    await new Promise(resolve => blockedServer.close(resolve));
+  }
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));
