@@ -7,7 +7,7 @@ import path from 'node:path';
 import n2w from 'number-to-words';
 
 // Change this whenever a rule below changes, so the line cache never reuses audio made by old rules.
-export const G2P_VERSION = 'misaki-js-1';
+export const G2P_VERSION = 'misaki-js-2';
 // Kokoro's punctuation. Everything else that is not a letter is dropped.
 const PUNCT = ';:,.!?\u2014…"“”()';
 const VOWELS = new Set('AIOQWYaiuæɑɒɔəɛɜɪʊʌᵻ');
@@ -38,6 +38,8 @@ function numberWords(text) {
 
 // A Say it like respelling: hyphenated, with a lowercase part and a CAPITALIZED (stressed) part.
 const respelling = token => token.includes('-') && token.split('-').some(part => /^[A-Z]+$/.test(part)) && token.split('-').some(part => /^[a-z]+$/.test(part));
+// A word without its possessive ending: shi-VAWN's and shi-VAWN' are both shi-VAWN.
+const bare = token => token.replace(/'s?$/, '');
 
 // gold and silver: Misaki word lists (word to phonemes, or to { DEFAULT, VBD, ... } for words
 // spelled alike). fallback: phonemes for a word in neither list (the BART model in production).
@@ -115,15 +117,17 @@ export function createG2P({ gold, silver, fallback, british = false }) {
     text = numberWords(text.normalize('NFD').replace(/\p{M}/gu, '').replace(/[‘’]/g, "'")
       .replace(/\b(Mr|Mrs|Ms|Dr|St)\.(?= [A-Z])/g, '$1').replace(/\s+/g, ' ').trim());
     const tokens = (text.match(/[A-Za-z]+(?:['-][A-Za-z]+)*'?|[;:,.!?\u2014…"“”()]+|\S/g) ?? [])
-      .flatMap(token => token.includes('-') && !respelling(token) ? token.split('-') : [token]);
+      .flatMap(token => token.includes('-') && !respelling(bare(token)) ? token.split('-') : [token]);
     const out = [];
     for (let i = 0; i < tokens.length; i++) {
       const token = tokens[i];
       if (/^[A-Za-z]/.test(token)) {
         const next = tokens.slice(i + 1).find(item => /^[A-Za-z]/.test(item));
-        const nextSounds = next && !respelling(next) ? lexical(next.replace(/'$/, '')) : null;
+        const nextSounds = next && !respelling(bare(next)) ? lexical(next.replace(/'$/, '')) : null;
         const nextVowel = nextSounds ? VOWELS.has(nextSounds.replace(/^[ˈˌ]/, '')[0]) : /^[aeiou]/i.test(next ?? '');
-        out.push({ phonemes: respelling(token) ? await respell(token) : await word(token.replace(/'$/, ''), nextVowel), punct: false });
+        // A respelling's possessive 's is added like a plural ending (Marcus's); a bare ' adds no sound.
+        const respelled = respelling(bare(token)) ? await respell(bare(token)) : null;
+        out.push({ phonemes: respelled == null ? await word(token.replace(/'$/, ''), nextVowel) : token.endsWith("'s") ? plural(respelled) : respelled, punct: false });
       } else if ([...token].every(char => PUNCT.includes(char))) out.push({ phonemes: token.replace(/\.{3}/g, '…'), punct: true });
     }
     // Punctuation hugs the word before it; an opening bracket or quote hugs the word after it.

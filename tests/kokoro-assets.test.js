@@ -159,7 +159,7 @@ test('the cache identity changes with the model file and with any G2P file', () 
   const words = structuredClone(manifest); words.files[2].sha256 = 'new';
   assert.notEqual(cacheIdentity(model).model, before.model);
   assert.notEqual(cacheIdentity(words).g2p, before.g2p);
-  assert.match(before.g2p, /^misaki-js-1:/);
+  assert.match(before.g2p, /^misaki-js-2:/);
 });
 
 test('the shipped manifest lists all 42 files, hashed, from the pinned release', () => {

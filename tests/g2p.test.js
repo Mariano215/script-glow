@@ -49,6 +49,13 @@ test('a Say it like respelling is stressed on its capitals', async () => {
   assert.deepEqual(run.asked, ['Shi', 'Vawn']);
 });
 
+test('a possessive respelling keeps its stress and takes the possessive like any word', async () => {
+  const run = g2p();
+  assert.equal(await run("shi-VAWN's keys."), 'ʃivˈɔnz kˈiz.');
+  assert.equal(await run("shi-VAWN' key."), 'ʃivˈɔn kˈi.');
+  assert.deepEqual(run.asked, ['Shi', 'Vawn', 'Shi', 'Vawn']);
+});
+
 test('words spelled alike take their DEFAULT reading', async () => {
   assert.equal(await g2p()('I read it.'), 'ˌI ɹˈid ɪt.');
 });
