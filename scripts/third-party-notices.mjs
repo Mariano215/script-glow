@@ -21,13 +21,19 @@ const fenced = text => ['````text', text, '````'];
 // These packages ship no LICENSE/COPYING/NOTICE file, so licenseText() finds nothing for them.
 // Copyright lines below, each cited to the source it was read from.
 const COPYRIGHT_OVERRIDES = {
+  // node_modules/onnxruntime-node/package.json "repository.url":
+  // https://github.com/Microsoft/onnxruntime.git; its LICENSE:
   // https://github.com/microsoft/onnxruntime/blob/main/LICENSE
   'onnxruntime-node': 'Copyright (c) Microsoft Corporation',
   'onnxruntime-common': 'Copyright (c) Microsoft Corporation',
   'onnxruntime-web': 'Copyright (c) Microsoft Corporation',
-  // https://github.com/snico-dev/guid-typescript, package.json "author" (no LICENSE file in the repo)
+  // node_modules/guid-typescript/package.json "repository.url":
+  // https://github.com/NicolasDeveloper/guid-typescript; that repo has no LICENSE file, so the name is
+  // the same package.json's "author" field ("nicolas").
   'guid-typescript': 'Copyright (c) nicolas',
-  // https://github.com/develar/lazy-val, package.json "author" (no LICENSE file in the repo)
+  // node_modules/lazy-val/package.json "repository": "develar/lazy-val" (https://github.com/develar/lazy-val);
+  // that repo has no LICENSE file, so the name is the same package.json's "author" field
+  // ("Vladimir Krivosheev").
   'lazy-val': 'Copyright (c) Vladimir Krivosheev',
 };
 const apache = licenseText('node_modules/@huggingface/transformers');
