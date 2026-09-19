@@ -2,7 +2,7 @@
 // where the data goes. Build first: npm run dist:dir
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from 'playwright';
@@ -18,6 +18,14 @@ const resources = process.platform === 'darwin' ? path.join(path.dirname(executa
 for (const file of ['app.asar.unpacked/server/kokoro/worker.js', 'app.asar.unpacked/server/kokoro/g2p.js', 'app.asar.unpacked/node_modules/@huggingface/transformers/package.json', 'app.asar.unpacked/node_modules/onnxruntime-node/package.json', 'app.asar.unpacked/node_modules/number-to-words/package.json', 'app.asar.unpacked/node_modules/sharp/index.js', 'THIRD_PARTY_NOTICES.md'])
   assert.ok(existsSync(path.join(resources, file)), `${file} is in the packed app`);
 assert.equal(existsSync(path.join(resources, 'app.asar.unpacked', 'node_modules', '@img')), false, 'No sharp image library is packed');
+// What the Node runtime never loads stays out (desktop/builder.cjs): the browser runtime, the web
+// builds of transformers.js, and onnxruntime's binaries for other systems and processors.
+const unpacked = path.join(resources, 'app.asar.unpacked', 'node_modules');
+assert.equal(existsSync(path.join(unpacked, 'onnxruntime-web')), false, 'onnxruntime-web is not packed');
+assert.deepEqual(readdirSync(path.join(unpacked, '@huggingface', 'transformers', 'dist')).sort(), ['transformers.node.cjs', 'transformers.node.mjs']);
+const runtimes = path.join(unpacked, 'onnxruntime-node', 'bin', 'napi-v3');
+assert.deepEqual(readdirSync(runtimes), [process.platform], 'Only this system\'s onnxruntime is packed');
+assert.deepEqual(readdirSync(path.join(runtimes, process.platform)), [process.arch], 'Only this processor\'s onnxruntime is packed');
 const home = mkdtempSync(path.join(os.tmpdir(), 'script-glow-desktop-'));
 const app = await electron.launch({ executablePath, env: { ...process.env, SCRIPT_GLOW_HOME: home } });
 try {

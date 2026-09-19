@@ -5,6 +5,7 @@
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import notShippedModule from './not-shipped.cjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const lock = JSON.parse(readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
@@ -41,8 +42,10 @@ const apache = licenseText('node_modules/@huggingface/transformers');
 // system, so their text is not read: the file must come out the same on Mac, Windows and Linux.
 // An entry with no version is npm's record of a link target (the sharp stub), not a package.
 const everywhere = ['darwin', 'win32', 'linux'];
+// Packages the build leaves out (scripts/not-shipped.cjs) are not listed.
+const dropped = notShippedModule.notShipped();
 const shipped = Object.entries(lock.packages)
-  .filter(([where, entry]) => where.startsWith('node_modules/') && !entry.dev && !entry.link && entry.version)
+  .filter(([where, entry]) => where.startsWith('node_modules/') && !entry.dev && !entry.link && entry.version && !dropped.some(name => where === `node_modules/${name}` || where.startsWith(`node_modules/${name}/`)))
   .map(([where, entry]) => ({ where, name: where.slice(where.lastIndexOf('node_modules/') + 'node_modules/'.length), version: entry.version, license: entry.license ?? 'not stated', platform: Boolean(entry.cpu || (entry.os && !everywhere.every(os => entry.os.includes(os)))) }))
   .sort((a, b) => a.where.localeCompare(b.where));
 const lines = [
