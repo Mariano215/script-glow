@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, open, readFile, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { assetName, assetsReady, cacheIdentity, createDownloader, voiceList } from '../server/kokoro/assets.js';
+import { MANIFEST, assetName, assetsReady, cacheIdentity, createDownloader, voiceList } from '../server/kokoro/assets.js';
 
 const bytes = (length, seed) => Buffer.from(Array.from({ length }, (_, i) => (i * 7 + seed) % 251));
 const sha = data => createHash('sha256').update(data).digest('hex');
@@ -111,4 +111,15 @@ test('the cache identity changes with the model file and with any G2P file', () 
   assert.notEqual(cacheIdentity(model).model, before.model);
   assert.notEqual(cacheIdentity(words).g2p, before.g2p);
   assert.match(before.g2p, /^misaki-js-1:/);
+});
+
+test('the shipped manifest lists all 42 files, hashed, from the pinned release', () => {
+  assert.equal(MANIFEST.tag, 'kokoro-assets-v1');
+  assert.equal(MANIFEST.base, 'https://github.com/Mariano215/script-glow/releases/download/kokoro-assets-v1');
+  assert.equal(MANIFEST.files.length, 42);
+  assert.ok(MANIFEST.files.every(file => /^[a-f0-9]{64}$/.test(file.sha256) && file.size > 0));
+  assert.equal(voiceList(MANIFEST).length, 28);
+  for (const needed of ['kokoro/onnx/model_fp16.onnx', 'kokoro/config.json', 'kokoro/tokenizer.json', 'kokoro/tokenizer_config.json', 'g2p/us_gold.json', 'g2p/us_silver.json', 'g2p/gb_gold.json', 'g2p/gb_silver.json', 'g2p/bart_enc_us.onnx', 'g2p/bart_dec_us.onnx', 'g2p/bart_us.json', 'g2p/bart_enc_gb.onnx', 'g2p/bart_dec_gb.onnx', 'g2p/bart_gb.json'])
+    assert.ok(MANIFEST.files.some(file => file.path === needed), needed);
+  for (const source of ['kokoro', 'misaki', 'bart_us', 'bart_gb']) assert.match(MANIFEST.sources[source].revision, /^[a-f0-9]{40}$/, source);
 });

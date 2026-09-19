@@ -2,7 +2,7 @@
 // scripts/kokoro-assets.mjs), whether they are all on this computer, and a download that resumes
 // after an interruption and refuses any file whose SHA-256 does not match.
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, readFileSync } from 'node:fs';
 import { mkdir, open, rm, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { renameRetry } from '../connections.js';
@@ -10,6 +10,8 @@ import { G2P_VERSION } from './g2p.js';
 
 // Release assets have no folders, so kokoro/voices/af_heart.bin is published as kokoro--voices--af_heart.bin.
 export const assetName = file => file.replaceAll('/', '--');
+// The files of the kokoro-assets-v1 release. Written by `node scripts/kokoro-assets.mjs manifest`.
+export const MANIFEST = JSON.parse(readFileSync(new URL('./manifest.json', import.meta.url), 'utf8'));
 // A manifest path is data, not a trusted path: only plain relative segments, no '.', '..' or drive letters.
 const PATH_PART = /^[A-Za-z0-9._-]+$/;
 function assetPath(dir, file) {
