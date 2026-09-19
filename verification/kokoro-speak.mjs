@@ -18,9 +18,14 @@ for (const [i, [voice, text]] of lines.entries()) {
   const pcm = await voices.speak(voice, text);
   const seconds = pcm.length / 2 / SAMPLE_RATE;
   assert.ok(seconds > 0.5 && seconds < 15, `${voice} made ${seconds} s of audio`);
+  // Speech peaks in the thousands. A silent line (the worker should refuse one anyway) fails here too.
+  let peak = 0, sum = 0;
+  for (let at = 0; at < pcm.length; at += 2) { const sample = pcm.readInt16LE(at); peak = Math.max(peak, Math.abs(sample)); sum += sample * sample; }
+  const rms = Math.sqrt(sum / (pcm.length / 2));
+  assert.ok(peak > 3000 && rms > 300, `${voice} is too quiet to be speech: peak ${peak}, rms ${Math.round(rms)}`);
   const file = path.join(out, `${i + 1}-${voice}.wav`);
   writeFileSync(file, encodeWav(pcm));
-  console.log(`${voice}: ${seconds.toFixed(2)} s of audio in ${((performance.now() - started) / 1000).toFixed(2)} s, ${file}`);
+  console.log(`${voice}: ${seconds.toFixed(2)} s of audio (peak ${peak}, rms ${Math.round(rms)}) in ${((performance.now() - started) / 1000).toFixed(2)} s, ${file}`);
 }
 voices.stop();
 console.log('PASS: the real worker spoke US and UK voices, and nothing loaded espeak-ng.');

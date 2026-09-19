@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createKokoroClient } from '../server/kokoro/client.js';
+import { floatToPcm } from '../server/kokoro/pcm.js';
 
 const workerFile = fileURLToPath(new URL('./fixtures/fake-kokoro-worker.js', import.meta.url));
 async function client(t, options = {}) {
@@ -52,4 +53,13 @@ test('an idle worker is stopped, and the next line starts a new one', async t =>
   await pause(600);
   assert.throws(() => process.kill(first, 0), { code: 'ESRCH' }, 'The idle worker has exited');
   assert.notEqual(pid(await voices.speak('af_heart', 'two')), first);
+});
+
+test('model output with NaN, Inf or no sound is refused, not turned into silence', () => {
+  assert.throws(() => floatToPcm(new Float32Array([0.1, NaN, 0.2])), /not a number/);
+  assert.throws(() => floatToPcm(new Float32Array([0.1, Infinity])), /not a number/);
+  assert.throws(() => floatToPcm(new Float32Array(2400)), /no sound/);
+  assert.throws(() => floatToPcm(new Float32Array(0)), /no sound/);
+  const pcm = floatToPcm(new Float32Array([0.5, -1, 2]));
+  assert.deepEqual([pcm.readInt16LE(0), pcm.readInt16LE(2), pcm.readInt16LE(4)], [16384, -32767, 32767]);
 });
