@@ -70,6 +70,12 @@ test('OpenAI: no key means not ready; with a key, lines are voiced once, cached,
   await finished(base, (await (await post(base, '/api/render', scene('openai:coral'))).json()).jobId);
   assert.equal(calls.filter(call => call.url.endsWith('/v1/audio/speech')).length, 2, 'A second render is paid for by nobody: lines come from the cache');
 
+  const directed = scene('openai:coral');
+  directed.scene.lines.push({ id: 'd', character: 'Narrator', text: 'She crosses to the door.', kind: 'direction' });
+  directed.directionVoice = 'openai:coral';
+  await finished(base, (await (await post(base, '/api/render', directed)).json()).jobId);
+  assert.equal(calls.filter(call => call.url.endsWith('/v1/audio/speech')).length, 2, 'A hosted engine is not paid to speak directions the actor turned off');
+
   const refused = await (await post(base, '/api/render', scene('Stock-Amber'))).json();
   assert.match(refused.error, /available voice/, 'A local voice is not sent to a hosted engine');
 }, url => {
