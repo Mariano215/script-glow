@@ -73,6 +73,26 @@ test('testing a connection lists what is already installed and never asks for sp
   });
 });
 
+test('the names check says which model an empty draft would pick automatically', () => {
+  const calls = [];
+  return fixture(async ({ base, session }) => {
+    const answer = await fetch(`${base}/api/connections/test`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base, 'x-script-glow-session': session }, body: JSON.stringify({ ...profile, only: 'names' }) });
+    const { results } = await answer.json();
+    assert.equal(results.length, 1);
+    assert.equal(results[0].service, 'names');
+    assert.match(results[0].detail, /^Using gemma \(chosen automatically\)\. 2 models installed: gemma, llama$/);
+
+    // A typed model does not claim to have been chosen automatically.
+    const typed = { ...profile, names: { engine: 'ollama', model: 'llama' }, ollama: { ...profile.ollama, model: 'llama' }, only: 'names' };
+    const typedAnswer = await fetch(`${base}/api/connections/test`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base, 'x-script-glow-session': session }, body: JSON.stringify(typed) });
+    assert.match((await typedAnswer.json()).results[0].detail, /^2 models installed: gemma, llama$/);
+  }, async url => {
+    calls.push(url);
+    if (url.endsWith('/api/tags')) return Buffer.from(JSON.stringify({ models: [{ name: 'gemma' }, { name: 'llama' }] }));
+    throw new Error('no such server');
+  });
+});
+
 test('a half-written profile never replaces a working one', async () => {
   const temp = await mkdtemp(path.join(os.tmpdir(), 'script-glow-atomic-'));
   try {

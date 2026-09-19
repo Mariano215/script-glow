@@ -727,7 +727,18 @@ function showFirstRun() {
     }
     if (settingsDraft) settingsDraft.voice.engine = choice === 'hosted' ? 'openai' : 'chatterbox';
     render();
-    if (location.hash !== '#settings') location.hash = '#settings';
+    const alreadyOnSettings = location.hash === '#settings';
+    if (!alreadyOnSettings) location.hash = '#settings';
+    if (choice === 'own') {
+      // The address field is what the actor came here to find, so send focus straight to it.
+      const focusChatterbox = () => {
+        const field = document.getElementById('service-chatterbox');
+        field?.scrollIntoView({ block: 'center', behavior: 'instant' });
+        (field as HTMLElement | null)?.focus();
+      };
+      if (alreadyOnSettings) requestAnimationFrame(focusChatterbox);
+      else window.addEventListener('hashchange', () => requestAnimationFrame(focusChatterbox), { once: true });
+    }
   });
   dialog.addEventListener('close', () => dialog.remove());
   document.body.append(dialog);
@@ -1003,7 +1014,7 @@ function settingsMarkup(): string {
   const keyFor = (provider: string) => settingsKeys.find(item => item.provider === provider && item.configured);
   const engine = draft.voice.engine, spec = settingsEngines[engine];
   const engines: [string, string, string, string][] = [
-    ['chatterbox', 'Chatterbox', 'Runs on your own computer. Private and free. Fast with an NVIDIA graphics card, slow without one.', 'Free · Private'],
+    ['chatterbox', 'Chatterbox', 'Free and private. Runs on this computer or on your own voice server.', 'Free · Private'],
     ['elevenlabs', 'ElevenLabs', 'The most natural voices. Uses the voices in your ElevenLabs account.', 'Paid · Your library'],
     ['openai', 'OpenAI', 'Clear, reliable voices. Any laptop.', 'Paid · 13 voices'],
     ['gemini', 'Google Gemini', 'A wide range of voices. Any laptop.', 'Paid · 30 voices'],
@@ -1045,7 +1056,7 @@ function settingsMarkup(): string {
         <h2 tabindex="-1" id="set-voices-title">Who reads the other parts</h2>
         <p class="section-lead">The engine that speaks your scene partners. Parts you cast by hand are kept when you switch.</p>
         <fieldset class="engine-grid"><legend class="visually-hidden">Voice engine</legend>${engines.map(engineCard).join('')}</fieldset>
-        ${engine === 'chatterbox' ? row('service-chatterbox', 'Chatterbox server', 'The address of your voice server. Script Glow only asks it for its voices, and sends it one only when you record your own.', `${input('service-chatterbox', draft.chatterbox.url)}${result('chatterbox')}`)
+        ${engine === 'chatterbox' ? row('service-chatterbox', 'Your Chatterbox server address', 'For example http://192.168.1.20:8095. Script Glow only asks it for its voices, and sends it one only when you record your own.', `${input('service-chatterbox', draft.chatterbox.url, 'url', 'placeholder="For example http://192.168.1.20:8095"')}${result('chatterbox')}`)
           : `<p class="callout" role="note"><strong>${esc(spec?.label ?? engine)} is paid.</strong> When you make audio, the lines of that scene are sent to ${esc(spec?.label ?? engine)} to be read aloud. Lines already made are kept and never sent twice. Your script file and your takes stay here.</p>
           ${keyFor(engine) ? '' : `<p class="callout is-warn" role="note">No ${esc(spec?.label ?? engine)} key yet. <button type="button" class="text-link" data-action="settings-jump" data-target="set-keys">Add it under Keys</button>.</p>`}
           ${row('service-voice-model', 'Model', 'The recommended one suits most scenes.', `<select id="service-voice-model" ${off}>${(spec?.models ?? []).map(name => `<option value="${name === spec?.model ? '' : esc(name)}" ${(draft.voice.model || spec?.model) === name ? 'selected' : ''}>${esc(name)}${name === spec?.model ? ' (recommended)' : ''}</option>`).join('')}</select>${result('voice', true)}`)}`}
@@ -1063,7 +1074,7 @@ function settingsMarkup(): string {
         ${row('service-names-engine', 'Who guesses', namesEngine === 'ollama' ? 'Ollama runs on this computer and is free.' : `${esc(namesSpec?.label ?? namesEngine)} charges a very small amount per guess.`, `<select id="service-names-engine" ${off}>${[['ollama', 'Ollama (this computer, free)'], ['openai', 'OpenAI'], ['anthropic', 'Claude (Anthropic)'], ['gemini', 'Google Gemini'], ['xai', 'Grok (xAI)'], ['openrouter', 'OpenRouter']].map(([value, label]) => `<option value="${value}" ${namesEngine === value ? 'selected' : ''}>${label}</option>`).join('')}</select>`)}
         ${namesEngine === 'ollama'
           ? `${row('service-ollama', 'Ollama server', 'The address of your Ollama server.', input('service-ollama', draft.ollama.url))}
-             ${row('service-model', 'Installed model', 'Leave empty to choose every voice type yourself. Script Glow never downloads a model.', `${input('service-model', draft.ollama.model, 'text', 'placeholder="for example gemma:2b"')}${result('names')}`)}`
+             ${row('service-model', 'Installed model', 'Leave empty to use the first model installed on your Ollama server. Script Glow never downloads a model.', `${input('service-model', draft.ollama.model, 'text', 'placeholder="for example gemma:2b"')}${result('names')}`)}`
           : `${keyFor(namesEngine) ? '' : `<p class="callout is-warn" role="note">No ${esc(namesSpec?.label ?? namesEngine)} key yet. <button type="button" class="text-link" data-action="settings-jump" data-target="set-keys">Add it under Keys</button>.</p>`}
              ${row('service-names-model', 'Model', 'Leave empty for the recommended model, or type any model this service offers.', `${input('service-names-model', draft.names.model, 'text', `list="names-models" placeholder="${esc(namesSpec?.model ?? '')} (recommended)"`)}<datalist id="names-models">${(namesSpec?.models ?? []).map(name => `<option value="${esc(name)}"></option>`).join('')}</datalist>${result('names', true)}`)}`}
       </section>
@@ -1081,7 +1092,7 @@ function settingsMarkup(): string {
       <section class="settings-section" id="set-advanced" aria-labelledby="set-advanced-title">
         <h2 tabindex="-1" id="set-advanced-title">Advanced</h2>
         <details class="advanced"${settingsAdvancedOpen ? ' open' : ''}><summary><span class="when-closed">Show advanced settings</span><span class="when-open">Hide advanced settings</span></summary>
-          ${engine === 'chatterbox' ? '' : row('service-chatterbox', 'Chatterbox server', 'Used for your own voice, and when you switch back to Chatterbox.', `${input('service-chatterbox', draft.chatterbox.url)}${result('chatterbox')}`)}
+          ${engine === 'chatterbox' ? '' : row('service-chatterbox', 'Your Chatterbox server address', 'Used for your own voice, and when you switch back to Chatterbox.', `${input('service-chatterbox', draft.chatterbox.url, 'url', 'placeholder="For example http://192.168.1.20:8095"')}${result('chatterbox')}`)}
           ${row('service-whisperx', 'WhisperX server', 'Not used yet. Ready for when Script Glow listens for your lines.', `${input('service-whisperx', draft.whisperx.url)}${result('whisperx')}`)}
           ${row('service-name', 'Name of this set-up', 'Shown when Script Glow starts, so you know which computer you are on.', input('service-name', draft.name, 'text'))}
           <label class="checkbox-label"><input type="checkbox" id="service-legacy" ${draft.chatterbox.legacyCache ? 'checked' : ''} ${off}> Reuse audio made by an older Script Glow</label>

@@ -172,14 +172,23 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
       if (!Array.isArray(names)) throw new Error('That server did not answer with a list of voices.');
       return `${names.length} voices`;
     };
-    const models = async url => {
+    const installedModels = async url => {
       const body = JSON.parse((await serviceFetch(`${url}/api/tags`, { signal: AbortSignal.timeout(5000) }, 100000)).toString('utf8'));
-      const names = (body.models ?? []).map(item => item.name).filter(name => typeof name === 'string');
+      return (body.models ?? []).map(item => item.name).filter(name => typeof name === 'string');
+    };
+    const models = async url => {
+      const names = await installedModels(url);
       return names.length ? `${names.length} models installed: ${names.slice(0, 6).join(', ')}` : 'No models installed yet.';
+    };
+    // The names check also says which model an empty draft would use, since guessing picks one automatically.
+    const namesModels = async url => {
+      if (tried.ollama.model) return models(url);
+      const names = await installedModels(url);
+      return names.length ? `Using ${names[0]} (chosen automatically). ${names.length} models installed: ${names.slice(0, 6).join(', ')}` : 'No models installed yet.';
     };
     const alive = async url => { await serviceFetch(`${url}/health`, { signal: AbortSignal.timeout(5000) }, 100000); return 'Answering.'; };
     // One card at a time when asked, so a check says something about the server next to it.
-    const checks = { names: () => tried.names.engine === 'ollama' ? probe('names', tried.ollama.url, models) : probe('names', TEXT_ENGINES[tried.names.engine].label, () => hostedModels.check(tried.names.engine)), voice: () => tried.voice.engine === 'chatterbox' ? probe('voice', tried.chatterbox.url, list) : probe('voice', ENGINES[tried.voice.engine].label, () => hosted.check(tried.voice.engine)), chatterbox: () => probe('chatterbox', tried.chatterbox.url, list), ollama: () => probe('ollama', tried.ollama.url, models), whisperx: () => probe('whisperx', tried.whisperx.url, alive) };
+    const checks = { names: () => tried.names.engine === 'ollama' ? probe('names', tried.ollama.url, namesModels) : probe('names', TEXT_ENGINES[tried.names.engine].label, () => hostedModels.check(tried.names.engine)), voice: () => tried.voice.engine === 'chatterbox' ? probe('voice', tried.chatterbox.url, list) : probe('voice', ENGINES[tried.voice.engine].label, () => hosted.check(tried.voice.engine)), chatterbox: () => probe('chatterbox', tried.chatterbox.url, list), ollama: () => probe('ollama', tried.ollama.url, models), whisperx: () => probe('whisperx', tried.whisperx.url, alive) };
     const only = typeof requested === 'string' ? requested : '';
     if (only && !Object.hasOwn(checks, only)) return res.status(400).json({ error: 'There is no such service to check.' });
     res.json({ results: await Promise.all((only ? [only] : Object.keys(checks).filter(name => name !== 'voice' && name !== 'names')).map(name => checks[name]())) });

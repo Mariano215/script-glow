@@ -40,12 +40,14 @@ try {
   await new Promise(resolve => setTimeout(resolve, 500));
   assert.equal(await welcome(), false, 'The welcome shows once');
 
-  // Own voice server: Settings opens on Chatterbox.
+  // Own voice server: Settings opens on Chatterbox, with focus sent straight to the address field.
   await rm(file);
   await page.reload();
   await until(page, 'the welcome after the profile is removed', () => !!document.querySelector('dialog.first-run[open]'));
   await page.click('[data-choice="own"]');
   await until(page, 'Settings on Chatterbox', () => location.hash === '#settings' && !!document.querySelector('#service-engine-chatterbox:checked'));
+  await until(page, 'focus on the Chatterbox address field', () => document.activeElement?.id === 'service-chatterbox');
+  assert.match(await page.locator('label[for="service-chatterbox"]').first().textContent(), /Your Chatterbox server address/);
   console.log('PASS: the welcome shows for a new install, leads to Settings, and Skip saves the defaults once.');
 
   // A Skip that cannot save must not vanish silently. The connections file's folder is a plain

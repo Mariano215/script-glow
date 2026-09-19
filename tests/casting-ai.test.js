@@ -58,6 +58,41 @@ test('local structured inference preserves submitted names, caches results, and 
   assert.notEqual(calls[1].request.prompt.match(/USER_DATA ([a-f0-9]{24})/)[1], delimiters[0]);
 });
 
+test('an empty model asks Ollama which are installed and guesses with the first; a typed model skips the lookup', async () => {
+  const calls = [];
+  const ai = createCastingAI({ model: '', serviceFetch: async (url, options) => {
+    calls.push(url);
+    if (url.endsWith('/api/tags')) return Buffer.from(JSON.stringify({ models: [{ name: 'llama3:8b' }, { name: 'gemma:2b' }] }));
+    return response(namesFrom(options).map(name => ({ name, gender: 'unknown' })));
+  } });
+  const result = await ai.guess({ names: ['DAVID'] });
+  assert.equal(result.model, 'llama3:8b');
+  assert.deepEqual(calls, [`${OLLAMA_URL}/api/tags`, `${OLLAMA_URL}/api/generate`]);
+
+  const typed = createCastingAI({ serviceFetch: async (url, options) => {
+    if (url.endsWith('/api/tags')) assert.fail('A typed model must not need the installed list.');
+    return response(namesFrom(options).map(name => ({ name, gender: 'unknown' })));
+  } });
+  const typedResult = await typed.guess({ names: ['DAVID'] });
+  assert.equal(typedResult.model, CASTING_MODEL);
+});
+
+test('no model installed keeps the guessing-is-off message but names the empty Ollama server', async () => {
+  const ai = createCastingAI({ model: '', serviceFetch: async url => {
+    if (url.endsWith('/api/tags')) return Buffer.from(JSON.stringify({ models: [] }));
+    assert.fail('No model to guess with');
+  } });
+  await assert.rejects(ai.guess({ names: ['DAVID'] }), error => error.status === 503 && /Name guessing is off/.test(error.message) && /No model is installed/.test(error.message));
+});
+
+test('an unreachable Ollama server is reported as unreachable, not as guessing being off', async () => {
+  const ai = createCastingAI({ model: '', serviceFetch: async url => {
+    if (url.endsWith('/api/tags')) throw new Error('ECONNREFUSED');
+    assert.fail('No model to guess with');
+  } });
+  await assert.rejects(ai.guess({ names: ['DAVID'] }), error => error.status === 503 && !/Name guessing is off/.test(error.message) && /could not be reached/.test(error.message));
+});
+
 test('invalid or instruction-bearing AI outputs are rejected atomically and never cached', async () => {
   const invalidOutputs = [
     () => Buffer.from('not json'),
