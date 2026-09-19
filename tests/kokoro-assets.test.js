@@ -89,6 +89,20 @@ test('voices come from the voice files, best rated first, accent and gender from
   assert.deepEqual(list[2], { id: 'kokoro:bm_george', label: 'George', gender: 'male', accent: 'UK' });
 });
 
+test('a manifest path outside the folder is refused, not followed', async t => {
+  const { dir } = await release(t);
+  const bad = ['../x.bin', '/etc/x', 'kokoro/../../x', 'C:\\x', 'kokoro//x.bin'];
+  for (const file of bad) {
+    const manifest = { version: 1, tag: 'test', base: 'http://127.0.0.1:1', files: [{ path: file, size: 1, sha256: sha(Buffer.from('x')) }] };
+    assert.equal(await assetsReady(dir, manifest), false, file);
+    const download = createDownloader({ dir, manifest });
+    await download.start();
+    assert.equal(download.state().status, 'error', file);
+    assert.match(download.state().error, /invalid/, file);
+  }
+  await assert.rejects(stat(path.resolve(dir, '..', 'x.bin')), { code: 'ENOENT' });
+});
+
 test('the cache identity changes with the model file and with any G2P file', () => {
   const manifest = manifestAt('https://example.invalid');
   const before = cacheIdentity(manifest);

@@ -10,10 +10,22 @@ import { G2P_VERSION } from './g2p.js';
 
 // Release assets have no folders, so kokoro/voices/af_heart.bin is published as kokoro--voices--af_heart.bin.
 export const assetName = file => file.replaceAll('/', '--');
+// A manifest path is data, not a trusted path: only plain relative segments, no '.', '..' or drive letters.
+const PATH_PART = /^[A-Za-z0-9._-]+$/;
+function assetPath(dir, file) {
+  const parts = file.split('/');
+  if (parts.length === 0 || parts.some(part => part === '.' || part === '..' || !PATH_PART.test(part))) {
+    throw Object.assign(new Error(`${file} is not a valid asset path`), { badPath: true });
+  }
+  return path.join(dir, ...parts);
+}
 const sized = async (file, size) => { try { return (await stat(file)).size === size; } catch { return false; } };
 // Every file present at its full size. A file only gets its real name after its hash matched.
 export async function assetsReady(dir, manifest) {
-  return (await Promise.all(manifest.files.map(file => sized(path.join(dir, file.path), file.size)))).every(Boolean);
+  const ready = await Promise.all(manifest.files.map(async file => {
+    try { return await sized(assetPath(dir, file.path), file.size); } catch { return false; }
+  }));
+  return ready.every(Boolean);
 }
 // What the line cache key needs: a new model file or new G2P data never reuses old audio.
 export function cacheIdentity(manifest) {
@@ -34,6 +46,7 @@ export function voiceList(manifest) {
 
 const said = error => error.code === 'ENOSPC' ? 'There is not enough free disk space for the built-in voices. Free some space, then press Try again.'
   : error.damaged ? 'A downloaded file was damaged on the way. Press Try again.'
+  : error.badPath ? 'One of the built-in voice files has an invalid name and cannot be downloaded.'
   : 'The download stopped. Check this computer\'s internet connection, then press Try again.';
 
 // openFile is there for the tests, which stand in a full disk.
@@ -42,7 +55,7 @@ export function createDownloader({ dir, manifest, fetchImpl = fetch, openFile = 
   let state = { status: 'idle', received: 0, total, error: '' };
   let running = null;
   async function fetchOne(file) {
-    const final = path.join(dir, file.path), part = `${final}.part`;
+    const final = assetPath(dir, file.path), part = `${final}.part`;
     if (await sized(final, file.size)) { state.received += file.size; return; }
     await mkdir(path.dirname(final), { recursive: true });
     let have = 0;
