@@ -1,0 +1,1 @@
+{"name":"phonemizer-spike","private":true,"type":"module","description":"THROWAWAY spike: GPL-free G2P for Kokoro. Not for the Script Glow repo.","dependencies":{"cmu-pronouncing-dictionary":"^3.0.0","kokoro-js":"^1.2.1","phonemize":"^2.0.1"}}
