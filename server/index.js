@@ -7,4 +7,8 @@ const port = Number(process.env.PORT) || 3001;
 const connectionsFile = process.env.SCRIPT_GLOW_CONFIG || CONNECTIONS_FILE;
 const connections = await loadConnections(connectionsFile);
 if (await moveOldSecrets()) console.log(`API keys moved to ${SECRETS_FILE}`);
-createApp({ connections, connectionsFile }).listen(port, '127.0.0.1', () => console.log(`Script Glow: http://127.0.0.1:${port} · ${connections.name}`));
+// Express 5 passes a listen failure (such as a port in use) to this callback instead of throwing.
+createApp({ connections, connectionsFile, firstRunScreen: true }).listen(port, '127.0.0.1', error => {
+  if (error) { console.error(`Script Glow could not start on port ${port}: ${error.message}`); process.exit(1); }
+  console.log(`Script Glow: http://127.0.0.1:${port} · ${connections.name}`);
+});
