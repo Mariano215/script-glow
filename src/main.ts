@@ -7,7 +7,7 @@ import './casting.css';
 import './projects.css';
 import './studio.css';
 import { highlightDefaults, readHighlights, highlightedCharacter, lineHidden, safeColor, type HighlightPreferences } from './highlights';
-import { parseScript, sceneIncludes, spokenLines, SAMPLE, type Scene, type ScriptLine } from './parser';
+import { parseScript, sayItLike, sceneIncludes, spokenLines, SAMPLE, type Scene, type ScriptLine } from './parser';
 import { buildEnd, buildNext, buildTargets, cueAt, cueRate, firstLetters, loopRange, shouldWait, stepCue, type Cue } from './playback';
 import { browserMp4, browserMp4Type, castingFileName, castingFit, countBeep, monoWav, setReaderLevel, mixerState, openRecorder, resumeMixer, takeClock, takeContainer, takeLabel, takeNeedsConverting, type Take, type TakeRecorder } from './selftape';
 import { inferCharacters, assignCast, resolvedGender, voiceGenders, voiceOwners, validGuesses, withNameGuesses, type NameGuesses, type GenderChoice } from './casting';
@@ -17,8 +17,8 @@ import { parseServerHost } from './server-address';
 
 interface RenderResult { fullUrl: string; practiceUrl: string; duration: number; cues: Cue[] }
 interface Job { id: string; status: 'queued' | 'running' | 'complete' | 'error'; completed: number; total: number; error?: string; result?: RenderResult }
-interface Preferences extends HighlightPreferences { source: string; name: string; role: string; cast: Record<string, string>; guesses: NameGuesses; genders: Record<string, GenderChoice>; manualVoices: Record<string, boolean>; sceneId: string; gap: number; directions: boolean; hide: boolean; listen: boolean; hint: boolean; wait: boolean; build: boolean; buildRepeats: number; tapeW: number; tapeH: number; loopA: string; loopB: string; tapeOverlay: boolean; tapeX: number; tapeY: number; follow: boolean; loop: boolean; rate: number; mode: 'full' | 'practice' ; readerLevel: number }
-const defaults: Preferences = { ...highlightDefaults, source: SAMPLE, name: 'The Last Light', role: 'MARCUS', cast: {}, guesses: {}, genders: {}, manualVoices: {}, sceneId: 'scene-1', gap: 1, directions: false, hide: false, listen: false, hint: false, wait: false, build: false, buildRepeats: 2, loopA: '', loopB: '', tapeOverlay: false, readerLevel: 1, tapeX: 50, tapeY: 78, tapeW: 0, tapeH: 0, follow: true, loop: false, rate: 1, mode: 'full' };
+interface Preferences extends HighlightPreferences { source: string; name: string; role: string; cast: Record<string, string>; sayAs: Record<string, string>; guesses: NameGuesses; genders: Record<string, GenderChoice>; manualVoices: Record<string, boolean>; sceneId: string; gap: number; directions: boolean; hide: boolean; listen: boolean; hint: boolean; wait: boolean; build: boolean; buildRepeats: number; tapeW: number; tapeH: number; loopA: string; loopB: string; tapeOverlay: boolean; tapeX: number; tapeY: number; follow: boolean; loop: boolean; rate: number; mode: 'full' | 'practice' ; readerLevel: number }
+const defaults: Preferences = { ...highlightDefaults, source: SAMPLE, name: 'The Last Light', role: 'MARCUS', cast: {}, sayAs: {}, guesses: {}, genders: {}, manualVoices: {}, sceneId: 'scene-1', gap: 1, directions: false, hide: false, listen: false, hint: false, wait: false, build: false, buildRepeats: 2, loopA: '', loopB: '', tapeOverlay: false, readerLevel: 1, tapeX: 50, tapeY: 78, tapeW: 0, tapeH: 0, follow: true, loop: false, rate: 1, mode: 'full' };
 // Defined before restored() runs: used any earlier, they throw, and the catch in restored() would
 // quietly replace a saved draft with the sample script.
 // The script can sit over the camera so the actor's eyeline stays near the lens. Its place is
@@ -35,6 +35,7 @@ function restored(): Preferences {
       name: text(saved.name, defaults.name), role: text(saved.role, defaults.role), sceneId: text(saved.sceneId, defaults.sceneId), mode: saved.mode === 'practice' ? 'practice' : 'full',
       genders: record(saved.genders, item => ['auto', 'male', 'female', 'unknown'].includes(item as string)) as Record<string, GenderChoice>,
       manualVoices: record(saved.manualVoices, item => typeof item === 'boolean') as Record<string, boolean>,
+      sayAs: record(saved.sayAs, item => typeof item === 'string') as Record<string, string>,
       directions: saved.directions === true, follow: saved.follow !== false, loop: saved.loop === true, source: typeof saved.source === 'string' ? saved.source : SAMPLE, cast: record(saved.cast, item => typeof item === 'string') as Record<string, string>, hide: saved.hide === true, listen: saved.listen === true, hint: saved.hint === true, wait: saved.wait === true, build: saved.build === true, buildRepeats: [1, 2, 3, 4, 5].includes(Number(saved.buildRepeats)) ? Number(saved.buildRepeats) : 2, loopA: typeof saved.loopA === 'string' ? saved.loopA : '', loopB: typeof saved.loopB === 'string' ? saved.loopB : '', tapeOverlay: saved.tapeOverlay === true, readerLevel: typeof saved.readerLevel === 'number' && Number.isFinite(saved.readerLevel) ? Math.min(1.5, Math.max(0, saved.readerLevel)) : 1, tapeX: tapePercent(saved.tapeX, 50), tapeY: tapePercent(saved.tapeY, 78), tapeW: tapeSize(saved.tapeW), tapeH: tapeSize(saved.tapeH), gap: Math.min(5, Math.max(0, Number(saved.gap ?? 1))), rate: [0.75, 1, 1.25, 1.5].includes(Number(saved.rate)) ? Number(saved.rate) : 1 };
   } catch { return { ...defaults }; }
 }
@@ -406,7 +407,8 @@ function scene(): Scene | undefined {
 }
 function renderInputs(current: Scene, spoken = true) {
   // What the engine is asked to say, not what the page shows: parentheticals are notes.
-  if (spoken) current = { ...current, lines: spokenLines(current.lines) };
+  // Say it like respellings are part of what is sent, so they are part of the render key too.
+  if (spoken) current = { ...current, lines: sayItLike(spokenLines(current.lines), prefs.sayAs) };
   return { scene: current, ...(current.id === 'full-script' ? { scope: 'script' } : {}), voices: Object.fromEntries(Object.entries(prefs.cast).sort(([a], [b]) => a.localeCompare(b))), myCharacter: prefs.role, gapSeconds: prefs.gap, includeDirections: prefs.directions };
 }
 // Audio made before parentheticals were silenced is keyed by the text as it was written.
@@ -574,6 +576,7 @@ function castMarkup() {
       ${selectedVoice && gender !== 'unknown' && voiceGenders[selectedVoice] !== gender ? `<small class="casting-conflict">This voice is ${esc(voiceGenders[selectedVoice] || 'not labeled')}, but the script suggests ${esc(gender)}.${!prefs.manualVoices[name] && name !== prefs.role ? ' No unused ' + esc(gender) + ' voice was left, so check this choice.' : ' Your choice is kept.'}</small>` : ''}
       ${shared.length ? `<small class="casting-conflict">Shared with ${esc(shared.map(pretty).join(', '))}. Choose an unused voice to make this character distinct.</small>` : ''}
       ${details ? `<p class="voice-description">${esc(`${details.accent} · ${details.tone}`)}</p>` : ''}
+      ${name === 'Narrator' ? '' : `<label class="say-it-like" for="say-${index}">Say it like <input id="say-${index}" data-say-as="${esc(name)}" value="${esc(prefs.sayAs[name] ?? '')}" maxlength="100" placeholder="for example shi-VAWN" autocomplete="off" spellcheck="false" ${busy() ? 'disabled' : ''}></label><small class="say-it-like-note">How the name sounds, in plain spelling. Capitals mark the stressed part.</small>`}
       <div class="voice-actions"><button type="button" data-action="voice-preview" data-voice="${esc(selectedVoice)}" data-character="${esc(name)}" ${busy() || !previewUrl(selectedVoice) ? 'disabled' : ''} aria-label="Preview voice for ${esc(name)}" aria-pressed="false">Preview voice</button>${details?.sourceUrl ? `<a href="${esc(details.sourceUrl)}" target="_blank" rel="noopener noreferrer" title="Where this voice comes from and its license">Voice credits</a>` : ''}</div>${!previewUrl(selectedVoice) ? '<small class="preview-unavailable">No sample available for this voice.</small>' : ''}<div class="character-actions">${name === 'Narrator' ? '' : `<button type="button" data-action="choose-role" data-character="${esc(name)}" ${busy() ? 'disabled' : ''} aria-pressed="${name === prefs.role}">${name === prefs.role ? '✓ I’m playing' : 'I’m playing this role'}</button><button type="button" data-action="highlight-character" data-character="${esc(name)}" aria-pressed="${name === highlightedCharacter(prefs, prefs.role)}">Highlight lines</button>`}</div></div></article>`;
   }).join('');
 }
@@ -1795,6 +1798,11 @@ app.addEventListener('change', async event => {
   if (target.dataset.cast) {
     if (target.value !== prefs.cast[target.dataset.cast] && voiceOwners(target.value, target.dataset.cast, castCharacters(), prefs.cast, castingConfig.aliases).length) { render(); return; }
     prefs.cast[target.dataset.cast] = target.value; prefs.manualVoices[target.dataset.cast] = true; invalidate();
+  }
+  if (target.dataset.sayAs !== undefined) {
+    const how = target.value.trim().slice(0, 100);
+    if (how) prefs.sayAs[target.dataset.sayAs] = how; else delete prefs.sayAs[target.dataset.sayAs];
+    invalidate(true);
   }
   if (target.dataset.gender) { prefs.genders[target.dataset.gender] = target.value as GenderChoice; prefs.manualVoices[target.dataset.gender] = false; if (target.dataset.gender !== prefs.role) delete prefs.cast[target.dataset.gender]; castDefaults(); invalidate(); }
   if (target.id === 'line-gap') { prefs.gap = Number(target.value); invalidate(); }

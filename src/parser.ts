@@ -156,6 +156,19 @@ export function sceneIncludes(scene: Scene, role: string): boolean {
   return scene.lines.some(line => line.kind === 'dialogue' ? line.character === role : named.test(line.text));
 }
 
+// Say it like: the actor's plain respelling of a name ("shi-VAWN" for Siobhan) replaces the name in
+// what every engine is sent. The page still shows the script as written. Whole words only, any case.
+export const sayItLike = (lines: ScriptLine[], sayAs: Record<string, string>): ScriptLine[] => {
+  // Longest names first, so "MARY ANN" is replaced before "MARY" could take part of it.
+  const rules = Object.entries(sayAs).map(([name, how]) => [name.trim(), how.trim()]).filter(([name, how]) => name && how)
+    .sort(([a], [b]) => b.length - a.length)
+    .map(([name, how]) => [new RegExp(`(?<![\\p{L}\\p{N}'])${escapeRegExp(name)}(?![\\p{L}\\p{N}])`, 'giu'), how] as const);
+  if (!rules.length) return lines;
+  return lines.map(line => {
+    const text = rules.reduce((out, [name, how]) => out.replace(name, () => how), line.text);
+    return text === line.text ? line : { ...line, text };
+  });
+};
 // A parenthetical is a note to the actor, not a line. It stays on the page and is never spoken.
 // ponytail: one pass, so a nested "((x))" leaves an empty pair behind. Real scripts do not nest.
 export const spokenText = (text: string): string => text.replace(/\([^()]*\)/g, ' ').replace(/\s{2,}/g, ' ').replace(/\s+([,.!?;:])/g, '$1').trim();
