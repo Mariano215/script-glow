@@ -21,6 +21,7 @@
   "dependencies": {
     "electron-updater": "^6.8.9",
     "express": "^5.1.0",
+    "number-to-words": "1.2.4",
     "pdfjs-dist": "5.4.296"
   },
   "devDependencies": {
