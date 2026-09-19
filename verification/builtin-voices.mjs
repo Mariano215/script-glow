@@ -93,6 +93,9 @@ try {
   try {
     assert.equal((await fetch(`${offBase}/api/kokoro`)).status, 404, 'The Kokoro routes do not exist when the switch is off');
     const page = await offBrowser.newPage();
+    // Attached before the first navigation, so nothing the page does on load is missed.
+    const kokoroRequests = [];
+    page.on('request', request => { const url = new URL(request.url()); if (url.pathname.startsWith('/api/kokoro')) kokoroRequests.push(request.url()); });
     page.on('dialog', dialog => dialog.accept());
     await page.goto(`${offBase}/#rehearsal`);
     await until(page, 'the welcome without built-in voices', () => !!document.querySelector('dialog.first-run[open]'));
@@ -102,7 +105,10 @@ try {
     await page.goto(`${offBase}/#settings`);
     await until(page, 'the engine cards', () => !!document.querySelector('.engine-card'));
     assert.equal(await page.locator('#service-engine-kokoro').count(), 0, 'No Built-in voices card when the switch is off');
-    console.log('PASS: with the release switch off, the welcome and Settings hide the built-in voices and /api/kokoro is not reachable.');
+    await page.goto(`${offBase}/#rehearsal`);
+    await until(page, 'back on Rehearsal', () => !!document.querySelector('.topbar'));
+    assert.deepEqual(kokoroRequests, [], `The page must never ask for /api/kokoro when the switch is off, but it did: ${JSON.stringify(kokoroRequests)}`);
+    console.log('PASS: with the release switch off, the welcome and Settings hide the built-in voices and the page never asks for /api/kokoro.');
   } finally {
     await offBrowser.close();
     await new Promise(resolve => offServer.close(resolve));
