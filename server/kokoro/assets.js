@@ -99,7 +99,7 @@ export function createDownloader({ dir, manifest, fetchImpl = fetch, openFile = 
     let have = 0;
     try { have = (await stat(part)).size; } catch { /* nothing yet */ }
     if (have > file.size) { await unlink(part); have = 0; }
-    let hash = createHash('sha256');
+    let hash = createHash('sha256'), tooLong = false;
     if (have) for await (const chunk of createReadStream(part)) hash.update(chunk);
     state.received += have;
     if (have < file.size) {
@@ -112,16 +112,19 @@ export function createDownloader({ dir, manifest, fetchImpl = fetch, openFile = 
         // The server ignored the range and sent the whole file, so the part is started again.
         if (have && response.status === 200) { await unlink(part); state.received -= have; have = 0; hash = createHash('sha256'); }
         const handle = await openFile(part, 'a');
+        let written = have;
         try {
           for await (const chunk of response.body) {
             clearTimeout(timer); timer = setTimeout(() => quiet.abort(), 30000);
+            // More bytes than the manifest says: not the file asked for, so the rest is not fetched.
+            if ((written += chunk.length) > file.size) { tooLong = true; break; }
             await handle.appendFile(chunk);
             hash.update(chunk); state.received += chunk.length;
           }
         } finally { await handle.close(); }
       } finally { clearTimeout(timer); }
     }
-    if ((await stat(part)).size !== file.size || hash.digest('hex') !== file.sha256) {
+    if (tooLong || (await stat(part)).size !== file.size || hash.digest('hex') !== file.sha256) {
       await unlink(part);
       throw Object.assign(new Error(`${file.path} does not match its checksum`), { damaged: true });
     }

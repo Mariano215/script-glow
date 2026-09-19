@@ -15,13 +15,20 @@ const MODEL = 'kokoro/onnx/model.onnx';
 const manifestAt = base => ({ version: 1, tag: 'test', base, files: Object.entries(FILES).map(([file, data]) => ({ path: file, size: data.length, sha256: sha(data) })) });
 
 // A fake release on this computer. cut: the first answer for the model stops after that many
-// bytes. wrong: that file is served with other bytes. Every Range header asked for is kept.
-async function release(t, { cut = 0, wrong = '' } = {}) {
+// bytes. wrong: that file is served with other bytes. endless: that file is sent whole, then more
+// bytes without end. Every Range header asked for is kept.
+async function release(t, { cut = 0, wrong = '', endless = '' } = {}) {
   const ranges = [];
   let cutDone = false;
   const server = http.createServer((req, res) => {
     const found = Object.entries(FILES).find(([file]) => `/${assetName(file)}` === req.url);
     if (!found) { res.writeHead(404).end(); return; }
+    if (found[0] === endless) {
+      res.writeHead(200); res.write(found[1]);
+      const more = setInterval(() => res.write(Buffer.alloc(16384, 1)), 5);
+      res.on('close', () => clearInterval(more));
+      return;
+    }
     let body = found[0] === wrong ? bytes(found[1].length, 99) : found[1];
     const range = /^bytes=(\d+)-$/.exec(req.headers.range ?? '');
     if (range) { ranges.push(`${assetName(found[0])} ${req.headers.range}`); body = body.subarray(Number(range[1])); }
@@ -69,6 +76,16 @@ test('a file with the wrong hash is refused and removed', async t => {
   await download.start();
   assert.match(download.state().error, /damaged/);
   await assert.rejects(stat(path.join(dir, 'kokoro/voices/af_heart.bin')), { code: 'ENOENT' });
+  await assert.rejects(stat(path.join(dir, 'kokoro/voices/af_heart.bin.part')), { code: 'ENOENT' });
+  assert.equal(await assetsReady(dir, manifest), false);
+});
+
+test('a file that runs past its expected size is cut off and refused', async t => {
+  const { manifest, dir } = await release(t, { endless: 'kokoro/voices/af_heart.bin' });
+  const download = createDownloader({ dir, manifest });
+  await download.start();
+  assert.equal(download.state().status, 'error');
+  assert.match(download.state().error, /damaged/);
   await assert.rejects(stat(path.join(dir, 'kokoro/voices/af_heart.bin.part')), { code: 'ENOENT' });
   assert.equal(await assetsReady(dir, manifest), false);
 });
