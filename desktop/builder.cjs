@@ -2,6 +2,7 @@
 // same file makes unsigned test builds. Mac signing and notarization follow the CSC_* and APPLE_*
 // environment variables, which electron-builder reads by itself.
 const { execFileSync } = require('node:child_process');
+const { createHash } = require('node:crypto');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -15,23 +16,38 @@ const azure = process.env.AZURE_SIGNING_ACCOUNT;
 // `npm install` (even with --no-save --os --cpu) reconciles the whole tree for that other
 // platform and deletes the arm64 binding this machine needs; `npm pack` just downloads the
 // one tarball and never touches node_modules or the lockfile, so that is used instead.
+// npm pack only checks the registry's own metadata, so the tarball is also checked against
+// the hash package-lock.json recorded, the same check `npm ci` makes.
 async function ensureCanvasBinding(context) {
   if (context.electronPlatformName !== 'darwin') return;
   const { Arch } = require('electron-builder');
   const archName = Arch[context.arch];
-  const dest = path.join(ROOT, 'node_modules', '@napi-rs', `canvas-darwin-${archName}`);
-  if (fs.existsSync(dest)) return;
   const pkgName = `@napi-rs/canvas-darwin-${archName}`;
+  const dest = path.join(ROOT, 'node_modules', pkgName);
   const version = require('@napi-rs/canvas/package.json').version;
+  const present = (() => { try { return JSON.parse(fs.readFileSync(path.join(dest, 'package.json'), 'utf8')).version; } catch { return null; } })();
+  if (present === version) return;
+  const locked = JSON.parse(fs.readFileSync(path.join(ROOT, 'package-lock.json'), 'utf8')).packages[`node_modules/${pkgName}`];
+  if (!locked?.integrity || locked.version !== version) throw new Error(`package-lock.json has no ${pkgName}@${version} entry with an integrity hash. Run npm install, then build again.`);
   console.log(`fetching ${pkgName}@${version} for the ${archName} build`);
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'script-glow-canvas-'));
+  // Unpacked next to the destination, then renamed into place, so a failed copy never leaves a
+  // half-filled folder that a later build would take as complete.
+  const staging = `${dest}.partial`;
   try {
-    const tarball = execFileSync('npm', ['pack', `${pkgName}@${version}`, '--pack-destination', tmpDir], { cwd: ROOT }).toString().trim().split('\n').pop();
-    execFileSync('tar', ['xzf', path.join(tmpDir, tarball), '-C', tmpDir]);
-    fs.mkdirSync(dest, { recursive: true });
-    fs.cpSync(path.join(tmpDir, 'package'), dest, { recursive: true });
+    // npm 11 prints a list, npm 12 an object keyed by package name.
+    const packed = Object.values(JSON.parse(execFileSync('npm', ['pack', `${pkgName}@${version}`, '--pack-destination', tmpDir, '--json'], { cwd: ROOT }).toString()))[0];
+    const tarball = path.join(tmpDir, packed.filename);
+    const integrity = `sha512-${createHash('sha512').update(fs.readFileSync(tarball)).digest('base64')}`;
+    if (integrity !== locked.integrity) throw new Error(`${pkgName}@${version} does not match package-lock.json (got ${integrity}, expected ${locked.integrity}).`);
+    fs.rmSync(staging, { recursive: true, force: true });
+    fs.mkdirSync(staging, { recursive: true });
+    execFileSync('tar', ['xzf', tarball, '-C', staging, '--strip-components=1']);
+    fs.rmSync(dest, { recursive: true, force: true });
+    fs.renameSync(staging, dest);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(staging, { recursive: true, force: true });
   }
 }
 
