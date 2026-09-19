@@ -24,7 +24,7 @@ try {
   execFileSync(process.execPath, ['verification/pdf-import.mjs'], { env: { ...process.env, APP_URL: base }, stdio: 'inherit' });
   await page.waitForFunction(() => document.querySelector('#project-save-status')?.textContent === 'Saved locally');
   assert.ok(existsSync(path.join(home, 'data', 'projects')), 'Projects are kept in the user folder');
-  console.log('PASS: the packed app starts, shows the welcome, imports a PDF and keeps data in the user folder.');
+  console.log('PASS: the packed app starts, shows the welcome, its PDF worker extracts text, and it honors SCRIPT_GLOW_HOME.');
 } finally {
   await app.close();
   rmSync(home, { recursive: true, force: true });
