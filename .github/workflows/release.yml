@@ -23,6 +23,19 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      # electron-builder uploads to v<package.json version>, not to the pushed tag. A tag that
+      # does not match would upload nothing and still pass, so it stops the release here.
+      - name: Check the tag matches package.json
+        shell: bash
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          expected="v$(node -p "require('./package.json').version")"
+          if [[ "$TAG_NAME" != "$expected" ]]; then
+            echo "Error: tag $TAG_NAME does not match the package.json version $expected. Push a tag that matches package.json." >&2
+            exit 1
+          fi
+          echo "Tag $TAG_NAME matches package.json."
       - run: npm ci
       - run: npm test
       - run: npm run build
