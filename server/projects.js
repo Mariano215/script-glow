@@ -46,6 +46,8 @@ export function validatePreferences(value) {
     highlightCharacter: value.highlightCharacter ?? '@role', characterColor: (value.characterColor ?? '#60a5fa').toLowerCase(), spokenColor: (value.spokenColor ?? '#f2b544').toLowerCase(),
     cast: map(value.cast, item => text(item, 100, true)), guesses: map(value.guesses ?? {}, item => ['male', 'female', 'unknown'].includes(item)),
     genders: map(value.genders ?? {}, item => ['auto', 'male', 'female', 'unknown'].includes(item)), manualVoices: map(value.manualVoices ?? {}, item => typeof item === 'boolean'),
+    // Say it like: how each character's name sounds, in plain spelling (shi-VAWN). One line of text.
+    sayAs: map(value.sayAs ?? {}, item => text(item, 100) && !/[\u0000-\u001f\u007f]/.test(item)),
     sceneId: value.sceneId, gap: value.gap, directions: value.directions, hide: value.hide, listen: value.listen ?? false, hint: value.hint ?? false, wait: value.wait ?? false, build: value.build ?? false, buildRepeats: value.buildRepeats ?? 2, loopA: value.loopA ?? '', loopB: value.loopB ?? '', readerLevel: value.readerLevel ?? 1, tapeOverlay: value.tapeOverlay ?? false, tapeX: value.tapeX ?? 50, tapeY: value.tapeY ?? 78, tapeW: value.tapeW ?? 0, tapeH: value.tapeH ?? 0, follow: value.follow, loop: value.loop, rate: value.rate, mode: value.mode };
 }
 function keyInput(key) {

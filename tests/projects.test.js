@@ -154,3 +154,9 @@ test('build up line by line and its repeat count are kept with the project', () 
   assert.equal(validatePreferences(preferences()).buildRepeats, 2);
   for (const buildRepeats of [0, 1.5, '3', 11]) assert.throws(() => validatePreferences({ ...preferences(), buildRepeats }), /rehearsal settings/);
 });
+
+test('say it like respellings are kept per character and checked', () => {
+  assert.deepEqual(validatePreferences({ ...preferences(), sayAs: { SIOBHAN: 'shi-VAWN' } }).sayAs, { SIOBHAN: 'shi-VAWN' });
+  assert.deepEqual(validatePreferences(preferences()).sayAs, {}, 'Projects saved before this feature have none');
+  for (const how of ['x'.repeat(101), 'a\nb', '', 3]) assert.throws(() => validatePreferences({ ...preferences(), sayAs: { SIOBHAN: how } }), /casting preferences/);
+});

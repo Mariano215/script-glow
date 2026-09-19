@@ -50,6 +50,7 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     env:
       # Unsigned test build: signing belongs to the release workflow.
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -67,3 +68,29 @@ jobs:
       - run: npm ci
       - run: npm run dist:dir
       - run: node verification/desktop.mjs
+      # Built-in voices end to end with the real model. The files come from the kokoro-assets-v1
+      # release, which Mariano publishes by hand and then marks with the KOKORO_ASSETS_PUBLISHED
+      # repository variable; until then these steps are skipped. The files are cached between runs,
+      # keyed on the manifest, so a new model file refreshes the cache. verified.json stays out of
+      # the cache, so a restored copy is always hashed once before it is used.
+      - name: Cache the built-in voice files
+        if: vars.KOKORO_ASSETS_PUBLISHED == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/sg-home/models
+            !${{ runner.temp }}/sg-home/models/kokoro-v1/verified.json
+          key: kokoro-${{ hashFiles('server/kokoro/manifest.json') }}
+      - name: Built-in voices in the packed app
+        if: vars.KOKORO_ASSETS_PUBLISHED == 'true'
+        env:
+          SCRIPT_GLOW_TEST_HOME: ${{ runner.temp }}/sg-home
+          # The release gate is still false, so the packed app offers the voices only with this set.
+          SCRIPT_GLOW_EXPERIMENTAL_KOKORO: '1'
+        run: node verification/kokoro-desktop.mjs
+      - name: The 20 actor lines through the real word lists
+        if: vars.KOKORO_ASSETS_PUBLISHED == 'true'
+        env:
+          G2P_DIR: ${{ runner.temp }}/sg-home/models/kokoro-v1/g2p
+        shell: bash
+        run: node verification/kokoro-g2p.mjs "$G2P_DIR"

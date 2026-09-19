@@ -7,6 +7,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
+const { notShipped } = require('../scripts/not-shipped.cjs');
+
 const ROOT = path.join(__dirname, '..');
 const azure = process.env.AZURE_SIGNING_ACCOUNT;
 
@@ -51,6 +53,21 @@ async function ensureCanvasBinding(context) {
   }
 }
 
+// The Kokoro worker runs from app.asar.unpacked, like the PDF worker, so every package it can import
+// is unpacked with it (onnxruntime-node also loads native libraries, which cannot load from an
+// archive). The list follows package-lock.json, so a new dependency is never missed.
+function unpackedTree(...roots) {
+  const lock = JSON.parse(fs.readFileSync(path.join(ROOT, 'package-lock.json'), 'utf8')).packages;
+  const found = new Set(), waiting = [...roots];
+  while (waiting.length) {
+    const name = waiting.shift(), entry = lock[`node_modules/${name}`];
+    if (found.has(name) || !entry || entry.dev) continue;
+    found.add(name);
+    waiting.push(...Object.keys({ ...entry.dependencies, ...entry.optionalDependencies }));
+  }
+  return [...found].sort().map(name => `node_modules/${name}/**`);
+}
+
 // Playwright's electron.launch drives the app through --inspect, so the unsigned CI smoke-test
 // build may keep that one fuse on. A build with signing settings is always strict.
 const inspectable = process.env.SCRIPT_GLOW_INSPECTABLE_BUILD === '1';
@@ -60,7 +77,11 @@ module.exports = {
   appId: 'io.github.mariano215.scriptglow',
   productName: 'Script Glow',
   directories: { output: 'release' },
-  files: ['desktop/**', 'server/**', 'dist/**', 'package.json'],
+  // Left out: packages the app never loads (scripts/not-shipped.cjs), and the parts of transformers.js
+  // its Node build (dist/transformers.node.mjs, what the Kokoro worker imports) never reads: the
+  // browser builds, their 21 MB .wasm, source maps, TypeScript types and the unbundled source.
+  files: ['desktop/**', 'server/**', 'dist/**', 'package.json', ...notShipped().map(name => `!node_modules/${name}{,/**}`),
+    '!node_modules/@huggingface/transformers/{src,types}{,/**}', '!node_modules/@huggingface/transformers/dist/!(transformers.node.mjs|transformers.node.cjs)'],
   beforePack: ensureCanvasBinding,
   // No running the app binary as Node, no NODE_OPTIONS, no --inspect, and the app code only from
   // app.asar: a local program cannot borrow the app's camera and microphone access that way.
@@ -70,8 +91,14 @@ module.exports = {
   // pdfjs-dist's legacy build needs @napi-rs/canvas (a native module) at runtime for its
   // DOMMatrix/Path2D polyfills outside a browser. The worker's own files are named directly;
   // it needs no other sibling from server/.
-  asarUnpack: ['server/pdf-worker.js', 'server/pdf-text.js', 'node_modules/pdfjs-dist/**', 'node_modules/@napi-rs/**'],
+  asarUnpack: ['server/pdf-worker.js', 'server/pdf-text.js', 'node_modules/pdfjs-dist/**', 'node_modules/@napi-rs/**',
+    'server/kokoro/**', ...unpackedTree('@huggingface/transformers', 'onnxruntime-node', 'number-to-words')],
+  // Next to the app, where anyone can read it: the licenses of everything shipped or downloaded.
+  extraResources: [{ from: 'THIRD_PARTY_NOTICES.md', to: 'THIRD_PARTY_NOTICES.md' },
+    { from: 'licenses/onnxruntime-1.21.0-ThirdPartyNotices.txt', to: 'onnxruntime-1.21.0-ThirdPartyNotices.txt' }],
   mac: {
+    // onnxruntime-node carries its runtime for every system; each build keeps only its own.
+    files: ['!node_modules/onnxruntime-node/bin/napi-v3/!(darwin){,/**}', '!node_modules/onnxruntime-node/bin/napi-v3/darwin/!(${arch}){,/**}'],
     artifactName: '${productName}-${version}-${arch}.${ext}',
     target: [{ target: 'dmg', arch: ['arm64', 'x64'] }, { target: 'zip', arch: ['arm64', 'x64'] }],
     icon: 'public/brand/script-glow-mark-v2.png',
@@ -85,6 +112,7 @@ module.exports = {
     },
   },
   win: {
+    files: ['!node_modules/onnxruntime-node/bin/napi-v3/!(win32){,/**}', '!node_modules/onnxruntime-node/bin/napi-v3/win32/!(${arch}){,/**}'],
     target: 'nsis',
     icon: 'public/brand/script-glow-mark-v2.png',
     ...(azure ? { azureSignOptions: { endpoint: process.env.AZURE_SIGNING_ENDPOINT, codeSigningAccountName: azure, certificateProfileName: process.env.AZURE_CERT_PROFILE, publisherName: process.env.AZURE_PUBLISHER_NAME } } : {}),

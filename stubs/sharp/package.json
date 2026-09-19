@@ -1,0 +1,7 @@
+{
+  "name": "sharp",
+  "version": "0.0.0-script-glow-stub",
+  "description": "Empty stand-in for sharp. Script Glow never processes images, and this keeps the LGPL libvips binary out of the app.",
+  "license": "MIT",
+  "main": "index.js"
+}

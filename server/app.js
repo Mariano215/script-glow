@@ -1,5 +1,6 @@
 import express from 'express';
 import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile, readdir, stat, unlink, open, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +12,8 @@ import { CONNECTIONS_FILE, DEFAULT_CONNECTIONS, saveConnections, validateConnect
 import { createSecrets, SECRETS_FILE } from './secrets.js';
 import { ENGINES, TEXT_ENGINES, hostedText, hostedVoices } from './hosted.js';
 import { findFfmpeg } from './video.js';
+import { MANIFEST, assetsReady, cacheIdentity, createDownloader, voiceList } from './kokoro/assets.js';
+import { WORKER_FILE, createKokoroClient } from './kokoro/client.js';
 
 // Set only inside the desktop app's main process, where the PDF worker runs as a utility process.
 const utilityProcess = process.versions.electron && process.type === 'browser' ? (await import('electron')).utilityProcess : null;
@@ -24,6 +27,11 @@ function fail(message, status = 400) { return Object.assign(new Error(message), 
 // A send error names the full local path. The page gets a plain sentence instead.
 const missing = error => error.status === 404 || error.code === 'ENOENT' ? fail('That file is no longer on this computer.', 404) : error;
 function localUrl(value) { try { const url = new URL(value); return url.protocol === 'http:' && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash && loopback(url.hostname); } catch { return false; } }
+// Kokoro ships only once the Misaki word-list provenance clears (release-gate.json).
+// SCRIPT_GLOW_EXPERIMENTAL_KOKORO=1 turns it on before that, for development.
+const RELEASE_GATE = JSON.parse(readFileSync(new URL('./kokoro/release-gate.json', import.meta.url), 'utf8'));
+export const kokoroOffered = (gate = RELEASE_GATE, env = process.env) => gate.misakiProvenanceCleared === true || env.SCRIPT_GLOW_EXPERIMENTAL_KOKORO === '1';
+const KOKORO_OFF = 'Built-in voices are not available in this version of Script Glow. Choose another voice engine in Settings.';
 function string(value, max) { return typeof value === 'string' && value.trim().length > 0 && value.length <= max; }
 
 // TTS requests stay short: long speeches are split at sentence boundaries (then
@@ -74,13 +82,20 @@ async function fetchBounded(url, options = {}, max = 25 * 1024 * 1024) {
   return Buffer.concat(chunks);
 }
 
-export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = path.resolve(cacheDir) === path.join(HOME, '.cache') ? path.join(HOME, 'data', 'projects') : path.join(cacheDir, 'projects'), previewDir = path.join(HOME, 'data', 'voice-previews'), connections = DEFAULT_CONNECTIONS, connectionsFile = CONNECTIONS_FILE, secretsFile = SECRETS_FILE, serviceFetch = fetchBounded, firstRunScreen = false } = {}) {
+export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = path.resolve(cacheDir) === path.join(HOME, '.cache') ? path.join(HOME, 'data', 'projects') : path.join(cacheDir, 'projects'), previewDir = path.join(HOME, 'data', 'voice-previews'), connections = DEFAULT_CONNECTIONS, connectionsFile = CONNECTIONS_FILE, secretsFile = SECRETS_FILE, serviceFetch = fetchBounded, firstRunScreen = false, modelsDir = path.join(HOME, 'models', 'kokoro-v1'), kokoro: { available: kokoroAvailable = kokoroOffered(), manifest: kokoroManifest = MANIFEST, fetch: kokoroFetch = fetch, workerFile = WORKER_FILE } = {} } = {}) {
   const secrets = createSecrets(secretsFile);
   const hosted = hostedVoices({ serviceFetch, secrets }), hostedModels = hostedText({ serviceFetch, secrets });
   // The profile can be rewritten from the Settings screen, so every use reads it live.
   let profile = validateConnections(connections);
   const TTS_URL = () => profile.chatterbox.url, STT_URL = () => profile.whisperx.url;
-  const engine = () => profile.voice.engine, isHosted = () => engine() !== 'chatterbox';
+  const engine = () => profile.voice.engine, isHosted = () => !['chatterbox', 'kokoro'].includes(engine());
+  // Built-in voices: Kokoro on this computer's CPU. Its files are downloaded once into modelsDir.
+  const kokoroFiles = createDownloader({ dir: modelsDir, manifest: kokoroManifest, fetchImpl: kokoroFetch });
+  const kokoroVoice = createKokoroClient({ workerFile, args: [modelsDir] });
+  const kokoroVoices = voiceList(kokoroManifest), kokoroKey = cacheIdentity(kokoroManifest);
+  const kokoroReady = () => assetsReady(modelsDir, kokoroManifest);
+  // Kokoro reads at most 510 phonemes at once, so its lines go in shorter pieces than a server's.
+  const chunkLength = () => engine() === 'kokoro' ? 350 : 1000;
   // One secret per launch. A page on another local port cannot read our responses, so it cannot
   // learn this, and without it no write is accepted from a browser.
   const session = randomUUID();
@@ -132,14 +147,17 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
     res.setHeader('Cache-Control', 'no-store');
     // A new install has no profile file yet. Any save writes one, so the welcome shows until then.
     const firstRun = firstRunScreen && !(await stat(connectionsFile).then(() => true, () => false));
-    res.json({ firstRun, ...profile, casting: { ...profile.casting, ...(await hasPrivatePreview() ? { previewUrl: '/private-voice-preview.wav' } : {}) }, adapters: { chatterbox: 'named-voice-wav-v1', whisperx: 'multipart-transcriptions-v1', ollama: 'generate-v1' }, engines: Object.fromEntries(Object.entries(ENGINES).map(([name, spec]) => [name, { label: spec.label, model: spec.model, models: spec.models }])), textEngines: Object.fromEntries(Object.entries(TEXT_ENGINES).map(([name, spec]) => [name, { label: spec.label, model: spec.model, models: spec.models }])) });
+    res.json({ firstRun, kokoroAvailable, ...profile, casting: { ...profile.casting, ...(await hasPrivatePreview() ? { previewUrl: '/private-voice-preview.wav' } : {}) }, adapters: { chatterbox: 'named-voice-wav-v1', whisperx: 'multipart-transcriptions-v1', ollama: 'generate-v1' }, engines: Object.fromEntries(Object.entries(ENGINES).map(([name, spec]) => [name, { label: spec.label, model: spec.model, models: spec.models }])), textEngines: Object.fromEntries(Object.entries(TEXT_ENGINES).map(([name, spec]) => [name, { label: spec.label, model: spec.model, models: spec.models }])) });
   });
   app.put('/api/connections', async (req, res) => {
     // Changing the engine in the middle of a render would mix two voices into one scene.
     if (draining || queue.length > 0 || castingAI.busy) return res.status(409).json({ error: 'Audio is being made right now. Wait for it to finish, then save.' });
     // A rejected profile is the caller's mistake and its reason belongs on screen, not in a log.
+    if (!kokoroAvailable && req.body?.voice?.engine === 'kokoro') return res.status(400).json({ error: KOKORO_OFF });
     try { profile = await saveConnections(connectionsFile, { ...req.body, version: 1 }); }
     catch (error) { return res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid connection settings.' }); }
+    // Another engine now reads the lines, so the built-in voices worker gives its memory back.
+    if (engine() !== 'kokoro') void kokoroVoice.stop();
     res.json({ ...profile, adapters: { chatterbox: 'named-voices', whisperx: 'multipart-transcribe', ollama: 'installed-models' } });
   });
   // A key goes in and never comes back out. The browser sees only whether one is set and a hint.
@@ -188,7 +206,7 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
     };
     const alive = async url => { await serviceFetch(`${url}/health`, { signal: AbortSignal.timeout(5000) }, 100000); return 'Answering.'; };
     // One card at a time when asked, so a check says something about the server next to it.
-    const checks = { names: () => tried.names.engine === 'ollama' ? probe('names', tried.ollama.url, namesModels) : probe('names', TEXT_ENGINES[tried.names.engine].label, () => hostedModels.check(tried.names.engine)), voice: () => tried.voice.engine === 'chatterbox' ? probe('voice', tried.chatterbox.url, list) : probe('voice', ENGINES[tried.voice.engine].label, () => hosted.check(tried.voice.engine)), chatterbox: () => probe('chatterbox', tried.chatterbox.url, list), ollama: () => probe('ollama', tried.ollama.url, models), whisperx: () => probe('whisperx', tried.whisperx.url, alive) };
+    const checks = { names: () => tried.names.engine === 'ollama' ? probe('names', tried.ollama.url, namesModels) : probe('names', TEXT_ENGINES[tried.names.engine].label, () => hostedModels.check(tried.names.engine)), voice: () => tried.voice.engine === 'chatterbox' ? probe('voice', tried.chatterbox.url, list) : tried.voice.engine === 'kokoro' ? probe('voice', 'Built-in voices', async () => { if (!kokoroAvailable) throw new Error(KOKORO_OFF); if (!await kokoroReady()) throw new Error('Not downloaded yet. Choose Download in Settings.'); return `Ready. ${kokoroVoices.length} voices on this computer.`; }) : probe('voice', ENGINES[tried.voice.engine].label, () => hosted.check(tried.voice.engine)), chatterbox: () => probe('chatterbox', tried.chatterbox.url, list), ollama: () => probe('ollama', tried.ollama.url, models), whisperx: () => probe('whisperx', tried.whisperx.url, alive) };
     const only = typeof requested === 'string' ? requested : '';
     if (only && !Object.hasOwn(checks, only)) return res.status(400).json({ error: 'There is no such service to check.' });
     res.json({ results: await Promise.all((only ? [only] : Object.keys(checks).filter(name => name !== 'voice' && name !== 'names')).map(name => checks[name]())) });
@@ -244,6 +262,10 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
   app.get('/api/projects/:id/backup-info', async (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json(await projects.backupInfo(req.params.id)); });
   // Hosted engines also say who each voice is, so casting can match voices to characters.
   async function getVoices() {
+    if (engine() === 'kokoro') {
+      if (!kokoroAvailable) throw fail(KOKORO_OFF, 503);
+      return { voices: kokoroVoices.map(item => item.id), details: Object.fromEntries(kokoroVoices.map(({ id, ...rest }) => [id, rest])) };
+    }
     if (isHosted()) { const list = await hosted.voices(engine()); return { voices: list.map(item => item.id), details: Object.fromEntries(list.map(({ id, ...rest }) => [id, rest])) }; }
     let values;
     try { values = JSON.parse((await serviceFetch(`${TTS_URL()}/v1/voices`, { headers: await voiceAuth(), signal: AbortSignal.timeout(5000) }, 100000)).toString()); }
@@ -255,7 +277,9 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
   app.get('/api/health', async (req, res) => {
     const check = async url => { try { await serviceFetch(`${url}/health`, { signal: AbortSignal.timeout(3000) }, 10000); return { ok: true }; } catch { return { ok: false }; } };
     // A hosted engine is not pinged on every poll: having a key is what "ready" means there.
-    const [tts, stt] = await Promise.all([isHosted() ? secrets.get(engine()).then(key => ({ ok: !!key, engine: engine() })) : check(TTS_URL()), check(STT_URL())]);
+    // Built-in voices count as ready while they download: a render waits for the files.
+    const kokoroTts = async () => ({ ok: kokoroAvailable && (await kokoroReady() || kokoroFiles.state().status === 'downloading'), engine: 'kokoro' });
+    const [tts, stt] = await Promise.all([engine() === 'kokoro' ? kokoroTts() : isHosted() ? secrets.get(engine()).then(key => ({ ok: !!key, engine: engine() })) : check(TTS_URL()), check(STT_URL())]);
     res.json({ tts, stt });
   });
   app.get('/api/voices', async (req, res) => res.json({ engine: engine(), ...await getVoices() }));
@@ -290,7 +314,7 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
   app.get('/api/voices/preview', async (req, res) => {
     if (req.query.session !== session) throw fail('This page is out of date. Reload Script Glow and try again.', 403);
     const voice = String(req.query.voice ?? '');
-    if (!isHosted() || !(await getVoices()).voices.includes(voice)) throw fail('There is no such voice to preview.', 404);
+    if (engine() === 'chatterbox' || !(await getVoices()).voices.includes(voice)) throw fail('There is no such voice to preview.', 404);
     res.setHeader('Cache-Control', 'no-store');
     res.type('audio/wav').send(encodeWav(await lineAudio('Hello. This is how I sound when I read your scene with you.', voice)));
   });
@@ -340,11 +364,19 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
   }
   async function lineAudio(text, voice) {
     const model = profile.voice.model || ENGINES[engine()]?.model || '';
-    const identity = isHosted() ? { version: 3, engine: engine(), model, text, voice } : profile.chatterbox.legacyCache ? { version: 1, text, voice } : { version: 2, namespace: profile.chatterbox.cacheNamespace, url: TTS_URL(), text, voice, ...(voice === profile.casting.preferredActorVoice && await sampleStamp() ? { sample: await sampleStamp() } : {}) };
+    const identity = engine() === 'kokoro' ? { version: 4, engine: 'kokoro', ...kokoroKey, text, voice } : isHosted() ? { version: 3, engine: engine(), model, text, voice } : profile.chatterbox.legacyCache ? { version: 1, text, voice } : { version: 2, namespace: profile.chatterbox.cacheNamespace, url: TTS_URL(), text, voice, ...(voice === profile.casting.preferredActorVoice && await sampleStamp() ? { sample: await sampleStamp() } : {}) };
     const key = createHash('sha256').update(JSON.stringify(identity)).digest('hex');
     const filename = path.join(cacheDir, 'lines', `${key}.wav`);
     try { return decodeWav(await readFile(filename)); } catch { /* Missing or corrupt cache: regenerate. */ }
-    const pcm = isHosted()
+    if (engine() === 'kokoro') {
+      if (!kokoroAvailable) throw fail(KOKORO_OFF, 503);
+      // The cast can be set up while the files arrive; making audio waits for them.
+      await kokoroFiles.settled();
+      if (!await kokoroReady()) throw fail('Built-in voices are not downloaded. Download them in Settings, under Who reads the other parts.', 503);
+    }
+    const pcm = engine() === 'kokoro'
+      ? decodeWav(encodeWav(await kokoroVoice.speak(voice.slice('kokoro:'.length), text)))
+      : isHosted()
       ? decodeWav(encodeWav(await hosted.speak(engine(), model, voice, text)))
       : decodeWav(await serviceFetch(`${TTS_URL()}/v1/tts`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...await voiceAuth() }, body: JSON.stringify({ text, voice }), signal: AbortSignal.timeout(180000) }).catch(error => { throw voiceRefused(error) ? fail(VOICE_TOKEN_HELP, 502) : error; }));
     await mkdir(path.dirname(filename), { recursive: true });
@@ -385,7 +417,7 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
         if (!heard && !job.input.warm.has(line.id)) continue;
         checkCancelled();
         const parts = [];
-        for (const chunk of speechChunks(line.text)) {
+        for (const chunk of speechChunks(line.text, chunkLength())) {
           try { parts.push(await lineAudio(chunk, heard ? job.input.voices[line.character] : job.input.warm.get(line.id))); }
           catch (error) { if (!heard) break; error.message = `${line.character} (“${line.text.slice(0, 40)}…”): ${error.message}`; throw error; }
           checkCancelled();
@@ -492,6 +524,18 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
     res.setHeader('Content-Type', 'audio/wav');
     res.sendFile(req.params.filename, { root: path.join(cacheDir, 'renders') }, error => { if (error && !res.headersSent) res.status(404).json({ error: 'Audio export not found. Render the scene again.' }); });
   });
+  // Built-in voices: whether their files are here, a download that can be followed, and removal.
+  // Switched off, these routes do not exist and fall through to the 404 below.
+  if (kokoroAvailable) {
+    app.get('/api/kokoro', async (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({ ...kokoroFiles.state(), ready: await kokoroReady() }); });
+    app.post('/api/kokoro/download', async (req, res) => { void kokoroFiles.start(); res.status(202).json({ ...kokoroFiles.state(), ready: await kokoroReady() }); });
+    app.delete('/api/kokoro', async (req, res) => {
+      if (draining || queue.length > 0) throw fail('Audio is being made right now. Wait for it to finish, then remove the voices.', 409);
+      await kokoroVoice.stop();
+      await kokoroFiles.remove();
+      res.json({ ...kokoroFiles.state(), ready: await kokoroReady() });
+    });
+  }
   app.use('/api', (req, res) => res.status(404).json({ error: 'API route not found.' }));
   app.use(express.static(path.join(ROOT, 'dist')));
   app.use((error, req, res, next) => {

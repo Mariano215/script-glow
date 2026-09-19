@@ -1,0 +1,116 @@
+// Writes THIRD_PARTY_NOTICES.md: the built-in voice files downloaded on first use, and every package
+// the app ships (from package-lock.json, development tools left out), each with its license text.
+//   npm run notices     writes the file
+//   --check             exits 1 when the file is out of date (tests/licenses.test.js runs this)
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import notShippedModule from './not-shipped.cjs';
+
+const root = fileURLToPath(new URL('../', import.meta.url));
+const lock = JSON.parse(readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
+const { sources } = JSON.parse(readFileSync(path.join(root, 'server/kokoro/manifest.json'), 'utf8'));
+const lf = text => text.replace(/\r\n?/g, '\n').trim();
+// LICENSE, LICENCE.md, COPYING, NOTICE and similar files at the top of a package folder.
+function licenseText(folder) {
+  let names;
+  try { names = readdirSync(path.join(root, folder)); } catch { return ''; }
+  return names.filter(name => /^(licen[cs]e|copying|notice)([.-]|$)/i.test(name)).sort()
+    .map(name => lf(readFileSync(path.join(root, folder, name), 'utf8'))).join('\n\n');
+}
+const fenced = text => ['````text', text, '````'];
+// These packages ship no LICENSE/COPYING/NOTICE file, so licenseText() finds nothing for them.
+// Copyright lines below, each cited to the source it was read from.
+const COPYRIGHT_OVERRIDES = {
+  // node_modules/onnxruntime-node/package.json "repository.url":
+  // https://github.com/Microsoft/onnxruntime.git; its LICENSE:
+  // https://github.com/microsoft/onnxruntime/blob/main/LICENSE
+  'onnxruntime-node': 'Copyright (c) Microsoft Corporation',
+  'onnxruntime-common': 'Copyright (c) Microsoft Corporation',
+  'onnxruntime-web': 'Copyright (c) Microsoft Corporation',
+  // node_modules/guid-typescript/package.json "repository.url":
+  // https://github.com/NicolasDeveloper/guid-typescript; that repo has no LICENSE file, so the name is
+  // the same package.json's "author" field ("nicolas").
+  'guid-typescript': 'Copyright (c) nicolas',
+  // node_modules/lazy-val/package.json "repository": "develar/lazy-val" (https://github.com/develar/lazy-val);
+  // that repo has no LICENSE file, so the name is the same package.json's "author" field
+  // ("Vladimir Krivosheev").
+  'lazy-val': 'Copyright (c) Vladimir Krivosheev',
+};
+// The MIT License's standard text (https://opensource.org/license/mit), printed with each
+// override's copyright line, since MIT asks for the whole notice to go with the software.
+const MIT = `Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`;
+// onnxruntime's own notices for the code built into its runtime, from
+// https://github.com/microsoft/onnxruntime/blob/v1.21.0/ThirdPartyNotices.txt. desktop/builder.cjs
+// ships it next to this file in the app's Resources folder.
+const ORT_NOTICES = 'licenses/onnxruntime-1.21.0-ThirdPartyNotices.txt';
+if (!existsSync(path.join(root, ORT_NOTICES))) throw new Error(`${ORT_NOTICES} is missing.`);
+const ortNote = name => name.startsWith('onnxruntime-') ? ['', `onnxruntime also includes code from other projects. Their notices are in \`${path.basename(ORT_NOTICES)}\`, next to this file (in the repository: \`${ORT_NOTICES}\`).`] : [];
+const apache = licenseText('node_modules/@huggingface/transformers');
+// Platform builds (cpu set, or os short of Mac, Windows and Linux) are installed only on their own
+// system, so their text is not read: the file must come out the same on Mac, Windows and Linux.
+// An entry with no version is npm's record of a link target (the sharp stub), not a package.
+const everywhere = ['darwin', 'win32', 'linux'];
+// Packages the build leaves out (scripts/not-shipped.cjs) are not listed.
+const dropped = notShippedModule.notShipped();
+const shipped = Object.entries(lock.packages)
+  .filter(([where, entry]) => where.startsWith('node_modules/') && !entry.dev && !entry.link && entry.version && !dropped.some(name => where === `node_modules/${name}` || where.startsWith(`node_modules/${name}/`)))
+  .map(([where, entry]) => ({ where, name: where.slice(where.lastIndexOf('node_modules/') + 'node_modules/'.length), version: entry.version, license: entry.license ?? 'not stated', platform: Boolean(entry.cpu || (entry.os && !everywhere.every(os => entry.os.includes(os)))) }))
+  .sort((a, b) => a.where.localeCompare(b.where));
+const lines = [
+  '# Third-party notices',
+  '',
+  'Script Glow is MIT-licensed (see LICENSE). It ships, or downloads on first use, the components below, each under its own license. This file is generated by `npm run notices` from package-lock.json and server/kokoro/manifest.json.',
+  '',
+  '## Built-in voices (downloaded on first use)',
+  '',
+  `- Kokoro-82M v1.0 and its English voice packs, by hexgrad; ONNX export by onnx-community (\`${sources.kokoro.repo}\` at \`${sources.kokoro.revision}\`). Apache-2.0.`,
+  `- Misaki English word lists us_gold, us_silver, gb_gold and gb_silver, by hexgrad (\`${sources.misaki.repo}\` at \`${sources.misaki.revision}\`). Apache-2.0.`,
+  '- Misaki G2P, ported: `server/kokoro/g2p.js` is a JavaScript port of `misaki/en.py` (hexgrad/misaki, Apache-2.0), modified by Script Glow: no part-of-speech tagging, a respelling rule for Say it like, and word lists read from the downloaded folder.',
+  `- Grapheme-to-phoneme fallback models by PeterReid (\`${sources.bart_us.repo}\` at \`${sources.bart_us.revision}\`, \`${sources.bart_gb.repo}\` at \`${sources.bart_gb.revision}\`), exported to ONNX by Script Glow. Apache-2.0.`,
+  '- kokoro-js (Apache-2.0): about ten lines of its `generate_from_ids` are adapted in `server/kokoro/worker.js`. kokoro-js itself is not shipped.',
+  '',
+  'The Apache License 2.0, which covers all five:',
+  '',
+  ...fenced(apache),
+  '',
+  '## Packages in the app',
+  '',
+  ...shipped.flatMap(item => {
+    const text = item.platform ? '' : licenseText(item.where);
+    const override = COPYRIGHT_OVERRIDES[item.name];
+    return [`### ${item.name} ${item.version}`, '', `License: ${item.license}`, '',
+      ...(item.platform ? ['A build for one platform. Its license text is in its package folder and matches the package it belongs to.']
+        : text ? fenced(text)
+        : override && item.license === 'MIT' ? [`The package has no license file. Its package.json states the MIT License:`, '', ...fenced(`MIT License\n\n${override}\n\n${MIT}`), ...ortNote(item.name)]
+        : override ? (() => { throw new Error(`${item.name}: an override needs its license text added.`); })()
+        : ['The package has no license file.']), ''];
+  }),
+];
+const out = `${lines.join('\n').trimEnd()}\n`;
+const file = path.join(root, 'THIRD_PARTY_NOTICES.md');
+if (process.argv.includes('--check')) {
+  let current = '';
+  try { current = readFileSync(file, 'utf8').replace(/\r\n/g, '\n'); } catch { /* missing counts as out of date */ }
+  if (current !== out) { console.error('THIRD_PARTY_NOTICES.md is out of date. Run: npm run notices'); process.exit(1); }
+  console.log('THIRD_PARTY_NOTICES.md is up to date.');
+} else {
+  writeFileSync(file, out);
+  console.log(`THIRD_PARTY_NOTICES.md: ${shipped.length} packages and the built-in voice files.`);
+}

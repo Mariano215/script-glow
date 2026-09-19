@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseScript, SAMPLE, sceneIncludes, spokenText, spokenLines } from '../src/parser.ts';
+import { parseScript, SAMPLE, sayItLike, sceneIncludes, spokenText, spokenLines, type ScriptLine } from '../src/parser.ts';
 
 test('sample identifies scenes and cast without treating prose as dialogue', () => {
   const script = parseScript(SAMPLE);
@@ -165,4 +165,17 @@ test('a parenthetical is shown on the page and never spoken', () => {
     ['1', 'I knew it was you. It was always you.'],
     ['4', 'He turns away.'],
   ], 'Notes drop out, prose directions stay, and line ids keep their place');
+});
+
+test('say it like: the respelling replaces the name in the spoken text, whole words only', () => {
+  const lines: ScriptLine[] = [
+    { id: 'a', character: 'MARCUS', text: "SIOBHAN! Siobhan's keys are here.", kind: 'dialogue' },
+    { id: 'b', character: 'SIOBHAN', text: 'Ann and Anna met Joanne.', kind: 'dialogue' },
+    { id: 'c', character: 'Narrator', text: 'Siobhan turns to Mary Ann.', kind: 'direction' },
+  ];
+  const said = sayItLike(lines, { SIOBHAN: 'shi-VAWN', ANN: 'AN', 'MARY ANN': 'MAIR-ee an', ELENA: ' ' });
+  assert.deepEqual(said.map(line => line.text), ["shi-VAWN! shi-VAWN's keys are here.", 'AN and Anna met Joanne.', 'shi-VAWN turns to MAIR-ee an.']);
+  assert.equal(sayItLike(lines, {}), lines, 'No respellings: the same lines');
+  assert.equal(sayItLike(lines, { ELENA: 'eh-LAY-nah' })[1], lines[1], 'A line without the name is the same object');
+  assert.equal(sayItLike([{ id: 'd', character: 'X', text: 'Price is right.', kind: 'dialogue' }], { PRICE: '$& dollars' })[0].text, '$& dollars is right.', 'A respelling is taken as written');
 });

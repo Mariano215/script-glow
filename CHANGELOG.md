@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Built-in voices.** Kokoro-82M runs on this computer's CPU inside Script Glow: no voice server, no GPU, no key, no cost. Choose **Free voices on this computer** on the welcome screen, or **Built-in voices** in Settings. The voice files (about 360 MB) download once, resume after an interruption, and are checked before use. 28 English voices, US and UK. Hidden until the Misaki word-list provenance question is settled (hexgrad/misaki#107); set `SCRIPT_GLOW_EXPERIMENTAL_KOKORO=1` to turn them on before then.
+- **Say it like** on each character card: type how a name sounds, for example `shi-VAWN`, and every voice engine says it that way.
+- Run `npm install` again: `@huggingface/transformers`, `onnxruntime-node` and `number-to-words` are new. `sharp` is replaced by an empty stub, so no LGPL image library is installed.
+- The license of every component that ships or is downloaded is in `THIRD_PARTY_NOTICES.md`.
+
 ## 0.2.0 (2026-09-17)
 
 ### Upgrading from 0.1.0
