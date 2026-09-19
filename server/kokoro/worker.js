@@ -17,7 +17,9 @@ const once = (map, key, make) => { if (!map.has(key)) map.set(key, make()); retu
 
 async function speak(voice, text) {
   if (!/^[ab][fm]_[a-z]+$/.test(voice)) throw new Error('that is not a built-in voice');
-  model ??= Promise.all([StyleTextToSpeech2Model.from_pretrained('kokoro', { dtype: 'fp16', device: 'cpu' }), AutoTokenizer.from_pretrained('kokoro')]);
+  // fp32, not fp16: the fp16 export gives all-NaN audio on CPU for about one line in ten (a voice
+  // and line length that overflow half precision), and fp32 is no slower on CPU.
+  model ??= Promise.all([StyleTextToSpeech2Model.from_pretrained('kokoro', { dtype: 'fp32', device: 'cpu' }), AutoTokenizer.from_pretrained('kokoro')]);
   const [tts, tokenizer] = await model;
   // Voices whose names start with b are British and read with the British word lists.
   const g2p = await once(g2ps, voice[0], () => loadG2P(path.join(dir, 'g2p'), { british: voice[0] === 'b' }));

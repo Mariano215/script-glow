@@ -32,7 +32,7 @@ export async function assetsReady(dir, manifest) {
 // What the line cache key needs: a new model file or new G2P data never reuses old audio.
 export function cacheIdentity(manifest) {
   return {
-    model: manifest.files.find(file => file.path === 'kokoro/onnx/model_fp16.onnx')?.sha256 ?? '',
+    model: manifest.files.find(file => file.path === 'kokoro/onnx/model.onnx')?.sha256 ?? '',
     g2p: [G2P_VERSION, ...manifest.files.filter(file => file.path.startsWith('g2p/')).map(file => file.sha256)].join(':'),
   };
 }

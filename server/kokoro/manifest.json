@@ -77,9 +77,9 @@
    "sha256": "df34b4f930b23447cd4dc410fabfb42eb3f24e803e6c3f97d618fb359380a36f"
   },
   {
-   "path": "kokoro/onnx/model_fp16.onnx",
-   "size": 163234740,
-   "sha256": "ba4527a874b42b21e35f468c10d326fdff3c7fc8cac1f85e9eb6c0dfc35c334a"
+   "path": "kokoro/onnx/model.onnx",
+   "size": 325532232,
+   "sha256": "8fbea51ea711f2af382e88c833d9e288c6dc82ce5e98421ea61c058ce21a34cb"
   },
   {
    "path": "kokoro/tokenizer.json",

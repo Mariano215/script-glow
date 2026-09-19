@@ -10,8 +10,8 @@ import { MANIFEST, assetName, assetsReady, cacheIdentity, createDownloader, voic
 
 const bytes = (length, seed) => Buffer.from(Array.from({ length }, (_, i) => (i * 7 + seed) % 251));
 const sha = data => createHash('sha256').update(data).digest('hex');
-const FILES = { 'kokoro/onnx/model_fp16.onnx': bytes(300000, 1), 'kokoro/voices/af_heart.bin': bytes(5000, 2), 'g2p/us_gold.json': bytes(7000, 3) };
-const MODEL = 'kokoro/onnx/model_fp16.onnx';
+const FILES = { 'kokoro/onnx/model.onnx': bytes(300000, 1), 'kokoro/voices/af_heart.bin': bytes(5000, 2), 'g2p/us_gold.json': bytes(7000, 3) };
+const MODEL = 'kokoro/onnx/model.onnx';
 const manifestAt = base => ({ version: 1, tag: 'test', base, files: Object.entries(FILES).map(([file, data]) => ({ path: file, size: data.length, sha256: sha(data) })) });
 
 // A fake release on this computer. cut: the first answer for the model stops after that many
@@ -119,7 +119,7 @@ test('the shipped manifest lists all 42 files, hashed, from the pinned release',
   assert.equal(MANIFEST.files.length, 42);
   assert.ok(MANIFEST.files.every(file => /^[a-f0-9]{64}$/.test(file.sha256) && file.size > 0));
   assert.equal(voiceList(MANIFEST).length, 28);
-  for (const needed of ['kokoro/onnx/model_fp16.onnx', 'kokoro/config.json', 'kokoro/tokenizer.json', 'kokoro/tokenizer_config.json', 'g2p/us_gold.json', 'g2p/us_silver.json', 'g2p/gb_gold.json', 'g2p/gb_silver.json', 'g2p/bart_enc_us.onnx', 'g2p/bart_dec_us.onnx', 'g2p/bart_us.json', 'g2p/bart_enc_gb.onnx', 'g2p/bart_dec_gb.onnx', 'g2p/bart_gb.json'])
+  for (const needed of ['kokoro/onnx/model.onnx', 'kokoro/config.json', 'kokoro/tokenizer.json', 'kokoro/tokenizer_config.json', 'g2p/us_gold.json', 'g2p/us_silver.json', 'g2p/gb_gold.json', 'g2p/gb_silver.json', 'g2p/bart_enc_us.onnx', 'g2p/bart_dec_us.onnx', 'g2p/bart_us.json', 'g2p/bart_enc_gb.onnx', 'g2p/bart_dec_gb.onnx', 'g2p/bart_gb.json'])
     assert.ok(MANIFEST.files.some(file => file.path === needed), needed);
   for (const source of ['kokoro', 'misaki', 'bart_us', 'bart_gb']) assert.match(MANIFEST.sources[source].revision, /^[a-f0-9]{40}$/, source);
 });

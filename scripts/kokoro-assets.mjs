@@ -40,7 +40,7 @@ async function listFiles() {
 if (command === 'fetch') {
   // Each source is pinned to the commit it had today, and the commit is kept in sources.json.
   const kokoroRevision = (await json(`https://huggingface.co/api/models/${KOKORO}`)).sha;
-  for (const name of ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'onnx/model_fp16.onnx', ...VOICES.map(voice => `voices/${voice}.bin`)])
+  for (const name of ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'onnx/model.onnx', ...VOICES.map(voice => `voices/${voice}.bin`)])
     await download(`https://huggingface.co/${KOKORO}/resolve/${kokoroRevision}/${name}`, path.join(dir, 'kokoro', name));
   const misakiRevision = (await json('https://api.github.com/repos/hexgrad/misaki/commits/main')).sha;
   for (const name of ['us_gold', 'us_silver', 'gb_gold', 'gb_silver'])
