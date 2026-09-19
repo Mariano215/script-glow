@@ -2,7 +2,7 @@
 
 Updated 2026-09-19 after implementation: fp32 model, release switch.
 
-Date: 2026-09-19. Status: waiting for Mariano's review.
+Date: 2026-09-19. Status: approved and implemented.
 
 ## Goal
 
@@ -46,7 +46,7 @@ Two throwaway spikes on 2026-09-19 (`scratchpad/kokoro-spike`, `scratchpad/phone
 - Files: the fp32 model (`model.onnx`, about 325 MB), the English voice packs, the tokenizer files, the Misaki US and GB word lists, and the two small fallback G2P models. About 360 MB in total.
 - They are published once as assets of a GitHub release in the Script Glow repository (for example tag `kokoro-assets-v1`), so there is one pinned place to download from. The app carries a manifest with each file's URL, size and SHA-256, and refuses a file whose hash does not match.
 - They are stored in the user folder: `<SCRIPT_GLOW_HOME or userData>/models/kokoro-v1/`. The download resumes after an interruption and writes each file to a temporary name first, so a half-downloaded file is never used.
-- The installer size does not change, except for the runtime (about 55 MB zipped for onnxruntime-node).
+- The installer size does not change, except for the runtime: onnxruntime-node for the one system and processor being built, onnxruntime-common, the Node build of transformers.js and number-to-words, about 36 MB installed and about 10 MB zipped. The browser runtime (onnxruntime-web) and the other systems' binaries are left out of the build.
 
 ### 4. First run and Settings
 

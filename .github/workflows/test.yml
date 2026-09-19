@@ -71,12 +71,15 @@ jobs:
       # Built-in voices end to end with the real model. The files come from the kokoro-assets-v1
       # release, which Mariano publishes by hand and then marks with the KOKORO_ASSETS_PUBLISHED
       # repository variable; until then these steps are skipped. The files are cached between runs,
-      # keyed on the manifest, so a new model file refreshes the cache.
+      # keyed on the manifest, so a new model file refreshes the cache. verified.json stays out of
+      # the cache, so a restored copy is always hashed once before it is used.
       - name: Cache the built-in voice files
         if: vars.KOKORO_ASSETS_PUBLISHED == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/sg-home/models
+          path: |
+            ${{ runner.temp }}/sg-home/models
+            !${{ runner.temp }}/sg-home/models/kokoro-v1/verified.json
           key: kokoro-${{ hashFiles('server/kokoro/manifest.json') }}
       - name: Built-in voices in the packed app
         if: vars.KOKORO_ASSETS_PUBLISHED == 'true'
