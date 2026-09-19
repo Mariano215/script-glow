@@ -51,3 +51,12 @@ test('THIRD_PARTY_NOTICES.md is up to date and covers the voice files and the pa
   for (const part of ['Kokoro-82M v1.0', 'Misaki English word lists', 'graphemes_to_phonemes_en_us', '### @huggingface/transformers ', '### onnxruntime-node ', '### number-to-words ', '### express '])
     assert.ok(notices.includes(part), part);
 });
+
+test('packages the build leaves out are not listed, and a package with no license file gets the full MIT text', () => {
+  const notices = readFileSync(new URL('../THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8');
+  assert.ok(!notices.includes('### onnxruntime-web '), 'onnxruntime-web does not ship');
+  const ort = notices.slice(notices.indexOf('### onnxruntime-node '), notices.indexOf('###', notices.indexOf('### onnxruntime-node ') + 3));
+  for (const part of ['Copyright (c) Microsoft Corporation', 'Permission is hereby granted, free of charge', 'THE SOFTWARE IS PROVIDED "AS IS"', 'onnxruntime-1.21.0-ThirdPartyNotices.txt'])
+    assert.ok(ort.includes(part), part);
+  assert.match(readFileSync(new URL('../licenses/onnxruntime-1.21.0-ThirdPartyNotices.txt', import.meta.url), 'utf8'), /^THIRD PARTY SOFTWARE NOTICES AND INFORMATION/);
+});

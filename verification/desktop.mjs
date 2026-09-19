@@ -15,7 +15,7 @@ assert.ok(executablePath, 'No packed app found. Run: npm run dist:dir');
 // Built-in voices: the worker and every package it imports sit outside app.asar, sharp is the empty
 // stub, the LGPL image library is absent, and the license notices sit next to the app.
 const resources = process.platform === 'darwin' ? path.join(path.dirname(executablePath), '..', 'Resources') : path.join(path.dirname(executablePath), 'resources');
-for (const file of ['app.asar.unpacked/server/kokoro/worker.js', 'app.asar.unpacked/server/kokoro/g2p.js', 'app.asar.unpacked/node_modules/@huggingface/transformers/package.json', 'app.asar.unpacked/node_modules/onnxruntime-node/package.json', 'app.asar.unpacked/node_modules/number-to-words/package.json', 'app.asar.unpacked/node_modules/sharp/index.js', 'THIRD_PARTY_NOTICES.md'])
+for (const file of ['app.asar.unpacked/server/kokoro/worker.js', 'app.asar.unpacked/server/kokoro/g2p.js', 'app.asar.unpacked/node_modules/@huggingface/transformers/package.json', 'app.asar.unpacked/node_modules/onnxruntime-node/package.json', 'app.asar.unpacked/node_modules/number-to-words/package.json', 'app.asar.unpacked/node_modules/sharp/index.js', 'THIRD_PARTY_NOTICES.md', 'onnxruntime-1.21.0-ThirdPartyNotices.txt'])
   assert.ok(existsSync(path.join(resources, file)), `${file} is in the packed app`);
 assert.equal(existsSync(path.join(resources, 'app.asar.unpacked', 'node_modules', '@img')), false, 'No sharp image library is packed');
 // What the Node runtime never loads stays out (desktop/builder.cjs): the browser runtime, the web

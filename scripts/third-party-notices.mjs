@@ -2,7 +2,7 @@
 // the app ships (from package-lock.json, development tools left out), each with its license text.
 //   npm run notices     writes the file
 //   --check             exits 1 when the file is out of date (tests/licenses.test.js runs this)
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import notShippedModule from './not-shipped.cjs';
@@ -37,6 +37,31 @@ const COPYRIGHT_OVERRIDES = {
   // ("Vladimir Krivosheev").
   'lazy-val': 'Copyright (c) Vladimir Krivosheev',
 };
+// The MIT License's standard text (https://opensource.org/license/mit), printed with each
+// override's copyright line, since MIT asks for the whole notice to go with the software.
+const MIT = `Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`;
+// onnxruntime's own notices for the code built into its runtime, from
+// https://github.com/microsoft/onnxruntime/blob/v1.21.0/ThirdPartyNotices.txt. desktop/builder.cjs
+// ships it next to this file in the app's Resources folder.
+const ORT_NOTICES = 'licenses/onnxruntime-1.21.0-ThirdPartyNotices.txt';
+if (!existsSync(path.join(root, ORT_NOTICES))) throw new Error(`${ORT_NOTICES} is missing.`);
+const ortNote = name => name.startsWith('onnxruntime-') ? ['', `onnxruntime also includes code from other projects. Their notices are in \`${path.basename(ORT_NOTICES)}\`, next to this file (in the repository: \`${ORT_NOTICES}\`).`] : [];
 const apache = licenseText('node_modules/@huggingface/transformers');
 // Platform builds (cpu set, or os short of Mac, Windows and Linux) are installed only on their own
 // system, so their text is not read: the file must come out the same on Mac, Windows and Linux.
@@ -73,7 +98,8 @@ const lines = [
     return [`### ${item.name} ${item.version}`, '', `License: ${item.license}`, '',
       ...(item.platform ? ['A build for one platform. Its license text is in its package folder and matches the package it belongs to.']
         : text ? fenced(text)
-        : override ? [`The package has no license file. ${override}.`]
+        : override && item.license === 'MIT' ? [`The package has no license file. Its package.json states the MIT License:`, '', ...fenced(`MIT License\n\n${override}\n\n${MIT}`), ...ortNote(item.name)]
+        : override ? (() => { throw new Error(`${item.name}: an override needs its license text added.`); })()
         : ['The package has no license file.']), ''];
   }),
 ];

@@ -94,7 +94,8 @@ module.exports = {
   asarUnpack: ['server/pdf-worker.js', 'server/pdf-text.js', 'node_modules/pdfjs-dist/**', 'node_modules/@napi-rs/**',
     'server/kokoro/**', ...unpackedTree('@huggingface/transformers', 'onnxruntime-node', 'number-to-words')],
   // Next to the app, where anyone can read it: the licenses of everything shipped or downloaded.
-  extraResources: [{ from: 'THIRD_PARTY_NOTICES.md', to: 'THIRD_PARTY_NOTICES.md' }],
+  extraResources: [{ from: 'THIRD_PARTY_NOTICES.md', to: 'THIRD_PARTY_NOTICES.md' },
+    { from: 'licenses/onnxruntime-1.21.0-ThirdPartyNotices.txt', to: 'onnxruntime-1.21.0-ThirdPartyNotices.txt' }],
   mac: {
     // onnxruntime-node carries its runtime for every system; each build keeps only its own.
     files: ['!node_modules/onnxruntime-node/bin/napi-v3/!(darwin){,/**}', '!node_modules/onnxruntime-node/bin/napi-v3/darwin/!(${arch}){,/**}'],
