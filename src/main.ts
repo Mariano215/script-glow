@@ -349,6 +349,7 @@ async function restoreProject(file: File) {
   finally { libraryBusy = false; persist(); render(); void guessNames(); }
 }
 window.addEventListener('beforeunload', event => {
+  flushSettingsSave();
   if (libraryBusy || libraryError || savePromise || libraryReady && JSON.stringify(prefs) !== lastSynced) { event.preventDefault(); event.returnValue = ''; }
 });
 function scene(): Scene | undefined {
@@ -738,6 +739,22 @@ function queueSettingsSave(immediate: boolean) {
   window.clearTimeout(settingsSaveTimer);
   if (immediate) void saveSettingsNow();
   else settingsSaveTimer = window.setTimeout(() => void saveSettingsNow(), 800);
+}
+// True only while an edit is actually queued to be sent or already on the wire, never merely
+// because the draft differs from the server (the first-run dialog presets an engine choice that
+// way on purpose, without saving it).
+const settingsSavePending = () => !!settingsSaveTimer || !!settingsSavePromise;
+// A debounced save waiting out its 800ms, or one already in flight, can be cut short by leaving
+// Settings, closing the app or reloading. This sends the latest draft with `keepalive`, so the
+// request survives the page going away; it does not wait for a reply or touch the retry path,
+// since nothing here will still be running to see one.
+function flushSettingsSave() {
+  const pending = settingsSavePending();
+  window.clearTimeout(settingsSaveTimer); settingsSaveTimer = 0;
+  if (!pending || !settingsDraft) return;
+  const snapshot = JSON.stringify(settingsDraft);
+  if (snapshot === settingsSaved) return;
+  fetch('/api/connections', { method: 'PUT', keepalive: true, headers: { 'Content-Type': 'application/json', ...sessionHeader() }, body: snapshot }).catch(() => {});
 }
 // A new install has no settings file. Skip saves the defaults. The other two choices open Settings,
 // where Save writes the file, so the welcome comes back at the next launch until voices are set up.
@@ -1363,6 +1380,9 @@ function applyScreen(focus = false) {
 window.addEventListener('hashchange', () => {
   const leaving = screen;
   screen = screenFromHash();
+  // The app is still running, so a debounced or waiting settings save can go through the normal
+  // path (retries, 400/409 handling and all) instead of the last-resort one below.
+  if (leaving === 'settings' && screen !== 'settings' && settingsSavePending()) void saveSettingsNow();
   // Navigating away from the self-tape screen gives the camera back.
   if (leaving === 'selftape' && screen !== 'selftape') void (recorder?.recording ? stopTake().then(closeCamera) : closeCamera());
   // Only the screen on show carries a copy of the script, so a second one never doubles the page.
@@ -1838,7 +1858,7 @@ document.addEventListener('keydown', event => {
 // A take that runs to the end of the scene stops itself, so nothing records an empty room.
 audio.addEventListener('ended', () => { if (recorder?.recording) void stopTake(); });
 // Closing the tab or reloading gives the camera back without waiting for the page to die.
-addEventListener('pagehide', () => { recorder?.release(); recorder = null; void stopVoiceRecording(true); });
+addEventListener('pagehide', () => { flushSettingsSave(); recorder?.release(); recorder = null; void stopVoiceRecording(true); });
 audio.addEventListener('seeked', () => syncActiveLine(true));
 audio.addEventListener('play', () => { stopVoicePreview(); syncActiveLine(true); void resumeMixer(); });
 // A phone or tablet has no Space key, so the wording follows the kind of screen.

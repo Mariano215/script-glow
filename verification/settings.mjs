@@ -125,6 +125,14 @@ try {
   assert.equal(JSON.parse(await readFile(file, 'utf8')).name, 'Friend laptop', 'A pause in typing saves by itself, never on every keystroke');
   assert.equal(Object.hasOwn(JSON.parse(await readFile(file, 'utf8')), 'apiKey'), false, 'The profile has nowhere to put a key');
 
+  // A debounced save must not be lost if the app closes or the page reloads before its 800ms
+  // window elapses: it flushes on the way out with a keepalive request.
+  await keystroke('#service-name', 'Reload before debounce');
+  await page.reload();
+  await until('the settings screen after an early reload', () => { const screenEl = document.querySelector('.settings-screen'); return !!screenEl && !screenEl.hidden && !!document.querySelector('#service-name'); });
+  for (let i = 0; i < 60 && JSON.parse(await readFile(file, 'utf8')).name !== 'Reload before debounce'; i++) await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(JSON.parse(await readFile(file, 'utf8')).name, 'Reload before debounce', 'The debounced save flushed instead of being lost to the reload');
+
   // Two changes before the first save lands are still serialized: never two PUTs in flight, and
   // the file ends up holding the last value typed.
   await page.evaluate(() => {
