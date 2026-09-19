@@ -10,9 +10,11 @@ import { launch, until } from './lib.mjs';
 const temp = await mkdtemp(path.join(os.tmpdir(), 'script-glow-first-run-'));
 const file = path.join(temp, 'connections.json');
 const exists = target => stat(target).then(() => true, () => false);
-const app = createApp({ cacheDir: path.join(temp, 'cache'), projectsDir: path.join(temp, 'projects'), previewDir: path.join(temp, 'previews'), connectionsFile: file, secretsFile: path.join(temp, 'secrets.json'), connections: DEFAULT_CONNECTIONS, firstRunScreen: true,
+const app = createApp({ cacheDir: path.join(temp, 'cache'), projectsDir: path.join(temp, 'projects'), previewDir: path.join(temp, 'previews'), connectionsFile: file, secretsFile: path.join(temp, 'secrets.json'), modelsDir: path.join(temp, 'models'), connections: DEFAULT_CONNECTIONS, firstRunScreen: true,
   // Connect tests the address it just filled in; a voice list lets that check show a real result.
-  serviceFetch: async url => { if (url.endsWith('/v1/voices')) return Buffer.from(JSON.stringify(['One', 'Two'])); throw new Error(`nothing is listening on ${url}`); } });
+  serviceFetch: async url => { if (url.endsWith('/v1/voices')) return Buffer.from(JSON.stringify(['One', 'Two'])); throw new Error(`nothing is listening on ${url}`); },
+  // The built-in voices are on for this check, so the welcome shows all four choices.
+  kokoro: { available: true } });
 const server = app.listen(0, '127.0.0.1');
 await new Promise(resolve => server.once('listening', resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
@@ -23,7 +25,7 @@ try {
 
   await page.goto(`${base}/#rehearsal`);
   await until(page, 'the welcome', () => !!document.querySelector('dialog.first-run[open]'));
-  assert.equal(await page.locator('dialog.first-run [data-choice]').count(), 3);
+  assert.equal(await page.locator('dialog.first-run [data-choice]').count(), 4);
 
   // A paid service: Settings opens with OpenAI chosen, and nothing is saved until the actor saves.
   await page.click('[data-choice="hosted"]');

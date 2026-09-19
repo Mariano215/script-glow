@@ -45,7 +45,53 @@ let voices: string[] = [];
 // Which engine speaks the cast, and what a hosted engine says about each of its voices.
 let voiceEngine = 'chatterbox';
 let liveVoices: Record<string, { label: string; gender: string; accent?: string }> = {};
-const hostedEngine = () => voiceEngine !== 'chatterbox';
+const LOCAL_ENGINES = ['chatterbox', 'kokoro'];
+const hostedEngine = () => !LOCAL_ENGINES.includes(voiceEngine);
+// Built-in voices: whether their files are on this computer, and how far a download has got.
+interface KokoroState { status: 'idle' | 'downloading' | 'ready' | 'error'; received: number; total: number; error: string; ready: boolean }
+let kokoro: KokoroState = { status: 'idle', received: 0, total: 0, error: '', ready: false };
+// A release switch from the server: off hides the built-in voices choice and card entirely, and
+// /api/kokoro is never called, since the routes do not exist when it is off.
+let kokoroAvailable = false;
+let kokoroPolling = false;
+const kokoroMB = () => Math.max(1, Math.round(kokoro.total / 1e6));
+const kokoroPercent = () => kokoro.total ? Math.floor(100 * kokoro.received / kokoro.total) : 0;
+// Moves the progress bars in place, so the page is not redrawn every second while the actor types.
+function syncKokoroProgress() {
+  document.querySelectorAll<HTMLProgressElement>('progress[data-kokoro-progress]').forEach(bar => { bar.max = kokoro.total || 1; bar.value = kokoro.received; });
+  document.querySelectorAll<HTMLElement>('[data-kokoro-percent]').forEach(label => { label.textContent = `${kokoroPercent()}%`; });
+}
+// Follows a running download once a second. When it ends, voices and health are read again.
+async function pollKokoro() {
+  if (kokoroPolling) return;
+  kokoroPolling = true;
+  try {
+    for (;;) {
+      const was = `${kokoro.status}/${kokoro.ready}`;
+      kokoro = await api<KokoroState>('/api/kokoro');
+      if (`${kokoro.status}/${kokoro.ready}` !== was) await connect(); else syncKokoroProgress();
+      if (kokoro.status !== 'downloading') return;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  } catch { /* the next action or a reload asks again */ } finally { kokoroPolling = false; }
+}
+async function downloadKokoro() {
+  try { kokoro = await api<KokoroState>('/api/kokoro/download', { method: 'POST', body: '{}' }); }
+  catch (error) { flash(error instanceof Error ? error.message : 'The download could not start.', true); return; }
+  render(); void pollKokoro();
+}
+async function removeKokoro() {
+  if (!confirm(`Remove the built-in voices? This frees about ${kokoroMB()} MB. You can download them again at any time.`)) return;
+  try { kokoro = await api<KokoroState>('/api/kokoro', { method: 'DELETE' }); }
+  catch (error) { flash(error instanceof Error ? error.message : 'The voices could not be removed.', true); return; }
+  await connect();
+}
+// The Settings panel under the Built-in voices card: Ready, the download in progress, or a button to start it.
+function kokoroPanel(off: string) {
+  if (kokoro.ready) return `<div class="kokoro-panel"><p class="callout" role="note"><strong>Ready.</strong> ${voices.length} English voices, US and UK. Your scene is read on this computer and is never sent anywhere.</p><button type="button" class="text-link is-danger" data-action="kokoro-remove" ${off}>Remove downloaded voices</button></div>`;
+  if (kokoro.status === 'downloading') return `<div class="kokoro-panel"><label for="kokoro-progress">Downloading the built-in voices, about ${kokoroMB()} MB · <span data-kokoro-percent>${kokoroPercent()}%</span></label><progress id="kokoro-progress" data-kokoro-progress max="${kokoro.total || 1}" value="${kokoro.received}"></progress><p class="library-note">You can set up the cast meanwhile. Making audio waits until the download is done.</p></div>`;
+  return `<div class="kokoro-panel">${kokoro.error ? `<p class="callout is-warn" role="alert">${esc(kokoro.error)}</p>` : ''}<button type="button" class="button primary" data-action="kokoro-download" ${off}>${kokoro.error ? 'Try again' : `Download the voices (about ${kokoroMB()} MB)`}</button><p class="library-note">A one-time download. After that the voices work without an internet connection.</p></div>`;
+}
 const engineName = () => PROVIDERS[voiceEngine]?.label ?? 'Chatterbox';
 let castingConfig = { preferredActorVoice: '', aliases: {} as Record<string, string>, previewUrl: '' };
 let profileReady = false;
@@ -587,7 +633,10 @@ function finishRenderUI() {
   button.title = result ? `${audio.paused ? 'Play' : 'Pause'} ${selection}` : `Make the audio for this ${selection}, then play`;
   const status = document.querySelector('#player-status')!;
   if (result && legacyAudio) status.textContent = 'This audio was made before parentheticals were silenced. Make the audio again to leave them out.';
-  else if (!result) status.textContent = busy() ? `Making audio: ${job?.completed || 0} of ${job?.total || 0} lines` : canGenerate ? 'Press Play to make the audio and listen' : 'Voices are not connected yet';
+  else if (!result) status.textContent = busy() ? `Making audio: ${job?.completed || 0} of ${job?.total || 0} lines`
+    : voiceEngine === 'kokoro' && kokoro.status === 'downloading' ? 'Downloading the built-in voices. Press Play and the audio is made once they arrive.'
+    : canGenerate ? 'Press Play to make the audio and listen'
+    : voiceEngine === 'kokoro' ? 'The built-in voices are not downloaded yet. Download them in Settings.' : 'Voices are not connected yet';
   // A hosted engine is paid per character, so the most this press can send is shown before it.
   const paid = hostedEngine() && current ? renderInputs(current).scene.lines.filter(line => line.kind === 'dialogue' || prefs.directions).reduce((sum, line) => sum + line.text.length, 0) : 0;
   document.querySelector('.render-hint')!.textContent = paid ? `Sends up to ${paid.toLocaleString()} characters to ${engineName()}, which charges for them. Lines already voiced are reused free.` : 'Makes two tracks: the whole cast, and one with silence for your lines.';
@@ -768,6 +817,7 @@ function showFirstRun() {
   const welcomeStep = () => `<h2 id="first-run-title">Welcome to Script Glow</h2>
     <p>Choose who reads the other parts. You can change this at any time in Settings.</p>
     <div class="first-run-choices">
+      ${kokoroAvailable ? `<button type="button" data-choice="builtin"><strong>Free voices on this computer <em>Recommended</em></strong><span>No setup. Works on any laptop. Downloads about ${kokoroMB()} MB once.</span></button>` : ''}
       <button type="button" data-choice="hosted"><strong>Use a paid voice service</strong><span>OpenAI, Google Gemini or ElevenLabs. Works on any laptop. You need an API key from the service.</span></button>
       <button type="button" data-choice="own"><strong>I have my own voice server</strong><span>Chatterbox on this computer or another one. Free and private.</span></button>
       <button type="button" data-choice="skip"><strong>Skip for now</strong><span>Look around with the sample script. The cast cannot read until you choose a voice service.</span></button>
@@ -841,6 +891,14 @@ function showFirstRun() {
     if (!choice) return;
     dialog.close();
     await loadSettings(true);
+    // Built-in voices: the choice is saved at once and the download starts; the cast can be set up meanwhile.
+    if (choice === 'builtin') {
+      if (settingsDraft) settingsDraft.voice = { engine: 'kokoro', model: '' };
+      await saveSettingsNow();
+      if (settingsError) { flash(settingsNotice || 'The built-in voices could not be chosen.', true); return; }
+      await downloadKokoro();
+      return;
+    }
     if (choice === 'skip') {
       // Nothing changed relative to what was just read, so the draft is not "dirty" on its own;
       // force one save anyway, since a new install has no profile file until something writes it.
@@ -1125,14 +1183,16 @@ function settingsMarkup(): string {
   const keyFor = (provider: string) => settingsKeys.find(item => item.provider === provider && item.configured);
   const engine = draft.voice.engine, spec = settingsEngines[engine];
   const engines: [string, string, string, string][] = [
+    ...(kokoroAvailable ? [['kokoro', 'Built-in voices', 'Runs inside Script Glow on any laptop. No voice server and no key.', 'Free · Private · No setup'] as [string, string, string, string]] : []),
     ['chatterbox', 'Chatterbox', 'Free and private. Runs on this computer or on your own voice server.', 'Free · Private'],
     ['elevenlabs', 'ElevenLabs', 'The most natural voices. Uses the voices in your ElevenLabs account.', 'Paid · Your library'],
     ['openai', 'OpenAI', 'Clear, reliable voices. Any laptop.', 'Paid · 13 voices'],
     ['gemini', 'Google Gemini', 'A wide range of voices. Any laptop.', 'Paid · 30 voices'],
   ];
   const engineCard = ([value, title, text, tag]: [string, string, string, string]) => {
-    const needsKey = value !== 'chatterbox';
-    const status = needsKey ? keyFor(value) ? '<span class="pill is-ok">✓ Key saved</span>' : '<span class="pill is-warn">Needs a key</span>' : '<span class="pill is-ok">No key needed</span>';
+    const needsKey = !LOCAL_ENGINES.includes(value);
+    const status = value === 'kokoro' ? kokoro.ready ? '<span class="pill is-ok">✓ Ready</span>' : kokoro.status === 'downloading' ? `<span class="pill">Downloading <span data-kokoro-percent>${kokoroPercent()}%</span></span>` : '<span class="pill is-warn">Not downloaded</span>'
+      : needsKey ? keyFor(value) ? '<span class="pill is-ok">✓ Key saved</span>' : '<span class="pill is-warn">Needs a key</span>' : '<span class="pill is-ok">No key needed</span>';
     return `<label class="engine-card ${engine === value ? 'is-selected' : ''}"><input type="radio" name="service-engine" id="service-engine-${value}" value="${value}" ${engine === value ? 'checked' : ''} ${off}><span class="engine-title">${title}<em>${tag}</em></span><span class="engine-text">${text}</span>${status}</label>`;
   };
   const provider = (item: (typeof settingsKeys)[number]) => {
@@ -1168,7 +1228,7 @@ function settingsMarkup(): string {
         <h2 tabindex="-1" id="set-voices-title">Who reads the other parts</h2>
         <p class="section-lead">The engine that speaks your scene partners. Parts you cast by hand are kept when you switch.</p>
         <fieldset class="engine-grid"><legend class="visually-hidden">Voice engine</legend>${engines.map(engineCard).join('')}</fieldset>
-        ${engine === 'chatterbox' ? row('service-chatterbox', 'Your Chatterbox server address', 'For example http://192.168.1.20:8095. Script Glow only asks it for its voices, and sends it one only when you record your own.', `${input('service-chatterbox', draft.chatterbox.url, 'url', 'placeholder="For example http://192.168.1.20:8095"')}${result('chatterbox')}`)
+        ${engine === 'kokoro' ? kokoroPanel(off) : engine === 'chatterbox' ? row('service-chatterbox', 'Your Chatterbox server address', 'For example http://192.168.1.20:8095. Script Glow only asks it for its voices, and sends it one only when you record your own.', `${input('service-chatterbox', draft.chatterbox.url, 'url', 'placeholder="For example http://192.168.1.20:8095"')}${result('chatterbox')}`)
           : `<p class="callout" role="note"><strong>${esc(spec?.label ?? engine)} is paid.</strong> When you make audio, the lines of that scene are sent to ${esc(spec?.label ?? engine)} to be read aloud. Lines already made are kept and never sent twice. Your script file and your takes stay here.</p>
           ${keyFor(engine) ? '' : `<p class="callout is-warn" role="note">No ${esc(spec?.label ?? engine)} key yet. <button type="button" class="text-link" data-action="settings-jump" data-target="set-keys">Add it under Keys</button>.</p>`}
           ${row('service-voice-model', 'Model', 'The recommended one suits most scenes.', `<select id="service-voice-model" ${off}>${(spec?.models ?? []).map(name => `<option value="${name === spec?.model ? '' : esc(name)}" ${(draft.voice.model || spec?.model) === name ? 'selected' : ''}>${esc(name)}${name === spec?.model ? ' (recommended)' : ''}</option>`).join('')}</select>${result('voice', true)}`)}`}
@@ -1466,16 +1526,17 @@ function render() {
 }
 function progressMarkup() {
   if (!job) return '';
-  if (job.status === 'error') return `<div class="job-error">${esc(job.error || 'The audio could not be made. Check the voice engine and try again.')}</div>`;
+  if (job.status === 'error') return `<div class="job-error">${esc(job.error || 'The audio could not be made. Check the voice engine and try again.')}${voiceEngine === 'kokoro' && !kokoro.ready && kokoro.status !== 'downloading' ? ' <button type="button" class="button secondary small" data-action="kokoro-download">Download the built-in voices</button>' : ''}</div>`;
   if (job.status === 'complete') return `<div class="job-complete">${icon('check', 14)} Both tracks ready · ${time(result?.duration || 0)}</div>`;
-  return `<div class="job-label"><span>${job.status === 'queued' ? (hostedEngine() ? `Queued for ${engineName()}` : 'Queued for the local GPU') : `${job.completed} of ${job.total} lines generated`}</span><button data-action="cancel">Cancel</button></div><progress max="${job.total || 1}" value="${job.completed}"></progress><small class="cold-start">The first time can take a few minutes.</small>`;
+  return `<div class="job-label"><span>${job.status === 'queued' ? (hostedEngine() ? `Queued for ${engineName()}` : voiceEngine === 'kokoro' ? 'Queued' : 'Queued for the local GPU') : `${job.completed} of ${job.total} lines generated`}</span><button data-action="cancel">Cancel</button></div><progress max="${job.total || 1}" value="${job.completed}"></progress><small class="cold-start">The first time can take a few minutes.</small>`;
 }
 async function connect(restoreOnStartup = false) {
-  const responses = await Promise.allSettled([api<{ tts: { ok: boolean } }>('/api/health'), api<{ voices: string[]; engine?: string; details?: typeof liveVoices }>('/api/voices'), api<{ casting: typeof castingConfig; voice?: { engine: string }; firstRun?: boolean }>('/api/connections')]);
+  const responses = await Promise.allSettled([api<{ tts: { ok: boolean } }>('/api/health'), api<{ voices: string[]; engine?: string; details?: typeof liveVoices }>('/api/voices'), api<{ casting: typeof castingConfig; voice?: { engine: string }; firstRun?: boolean; kokoroAvailable?: boolean }>('/api/connections')]);
   if (responses[2].status === 'fulfilled') voiceEngine = responses[2].value.voice?.engine ?? 'chatterbox';
   profileReady = responses[2].status === 'fulfilled';
   if (responses[2].status === 'fulfilled') castingConfig = { ...castingConfig, ...responses[2].value.casting };
   else { notice = 'Connection profile unavailable. Existing voice assignments are preserved. Check connection before automatic casting.'; noticeError = true; }
+  if (responses[2].status === 'fulfilled') kokoroAvailable = responses[2].value.kokoroAvailable === true;
   connectionChecked = true;
   ttsOnline = responses[0].status === 'fulfilled' && responses[0].value.tts.ok;
   voices = responses[1].status === 'fulfilled' ? responses[1].value.voices : [];
@@ -1484,6 +1545,11 @@ async function connect(restoreOnStartup = false) {
   const previousCast = JSON.stringify(prefs.cast);
   castDefaults();
   if (previousCast !== JSON.stringify(prefs.cast) || restoreOnStartup && generation === 0 && !result && !busy()) invalidate(true);
+  // The switch is off: /api/kokoro does not exist, so it is never called.
+  if (kokoroAvailable) {
+    try { kokoro = await api<KokoroState>('/api/kokoro'); } catch { /* the next action or a reload asks again */ }
+    if (kokoro.status === 'downloading') void pollKokoro();
+  }
   persist(); render(); void guessNames();
   if (responses[2].status === 'fulfilled' && responses[2].value.firstRun) showFirstRun();
 }
@@ -1615,6 +1681,8 @@ app.addEventListener('click', async event => {
   if (action === 'clear-marks') { prefs.loopA = ''; prefs.loopB = ''; applyRate(); persist(); }
   if (action === 'build-restart') { restartBuild(); if (result) audio.currentTime = (prefs.loopA && result.cues.find(item => item.lineId === prefs.loopA)?.start) || 0; }
   if (action === 'test-service') { await testService(target.dataset.service!); return; }
+  if (action === 'kokoro-download') { await downloadKokoro(); return; }
+  if (action === 'kokoro-remove') { await removeKokoro(); return; }
   if (action === 'voice-record') { discardVoice(); await startVoiceRecording(); return; }
   if (action === 'voice-stop') { await stopVoiceRecording(); return; }
   if (action === 'voice-cancel') { await stopVoiceRecording(true); return; }
@@ -1741,7 +1809,12 @@ app.addEventListener('change', async event => {
   }
   if (target.id === 'voice-file') { const chosen = target.files?.[0]; target.value = ''; if (chosen) { if (voiceRec) await stopVoiceRecording(true); await voiceFromAudio(chosen); render(); } return; }
   if (target.id.startsWith('key-')) { keyDrafts[target.id.slice(4)] = target.value; return; }
-  if (target.name === 'service-engine' && settingsDraft) { settingsDraft.voice = { engine: target.value, model: '' }; settingsResults = []; settingsNotice = ''; render(); queueSettingsSave(true); return; }
+  if (target.name === 'service-engine' && settingsDraft) {
+    settingsDraft.voice = { engine: target.value, model: '' }; settingsResults = []; settingsNotice = ''; render(); queueSettingsSave(true);
+    // Choosing the built-in voices is all the setup there is: their download starts right away.
+    if (target.value === 'kokoro' && !kokoro.ready && kokoro.status !== 'downloading') void downloadKokoro();
+    return;
+  }
   if (target.id.startsWith('service-') && settingsDraft) {
     if (applySettingField(target)) { queueSettingsSave(true); return; }
     settingsResults = []; settingsNotice = '';
