@@ -9,6 +9,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from 'playwright';
+import { decodeWav, SAMPLE_RATE } from '../server/audio.js';
 import { DEFAULT_CONNECTIONS } from '../server/connections.js';
 
 const candidates = process.platform === 'win32'
@@ -19,6 +20,20 @@ assert.ok(executablePath, 'No packed app found. Run: npm run dist:dir');
 const home = process.env.SCRIPT_GLOW_TEST_HOME || mkdtempSync(path.join(os.tmpdir(), 'script-glow-kokoro-desktop-'));
 const models = path.join(home, 'models', 'kokoro-v1');
 if (process.env.KOKORO_LOCAL_FILES && !existsSync(models)) { mkdirSync(path.dirname(models), { recursive: true }); cpSync(process.env.KOKORO_LOCAL_FILES, models, { recursive: true }); }
+// Speech peaks in the thousands (the kokoro-speak.mjs measure). Each line is measured on its own
+// stretch of the full track, from the render's cues, so one silent or dropped line fails.
+function speechIn(pcm, cues, count) {
+  assert.equal(cues.length, count, `A cue for every line (${cues.length} of ${count})`);
+  return cues.map(cue => {
+    const part = pcm.subarray(Math.round(cue.start * SAMPLE_RATE) * 2, Math.round(cue.end * SAMPLE_RATE) * 2);
+    assert.ok(part.length / 2 / SAMPLE_RATE > 0.3, `${cue.lineId} (${cue.character}) has ${part.length / 2 / SAMPLE_RATE} s of audio`);
+    let peak = 0, sum = 0;
+    for (let at = 0; at < part.length; at += 2) { const sample = part.readInt16LE(at); peak = Math.max(peak, Math.abs(sample)); sum += sample * sample; }
+    const rms = Math.sqrt(sum / (part.length / 2));
+    assert.ok(peak > 3000 && rms > 300, `${cue.lineId} (${cue.character}) is too quiet to be speech: peak ${peak}, rms ${Math.round(rms)}`);
+    return `${cue.lineId} peak ${peak} rms ${Math.round(rms)}`;
+  });
+}
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const json = { 'Content-Type': 'application/json' };
 const app = await electron.launch({ executablePath, env: { ...process.env, SCRIPT_GLOW_HOME: home } });
@@ -65,6 +80,12 @@ try {
   assert.ok(job.result.duration > lines.length * 0.5, `Every line has real audio (${job.result.duration} s in all)`);
   const wav = Buffer.from(await (await fetch(base + job.result.fullUrl)).arrayBuffer());
   assert.equal(wav.subarray(0, 4).toString(), 'RIFF');
+  const pcm = decodeWav(wav);
+  console.log(`Every line has speech: ${speechIn(pcm, job.result.cues, lines.length).join(', ')}.`);
+  // The check can fail: the same track with one line zeroed is refused.
+  const zeroed = Buffer.from(pcm), cue = job.result.cues[3];
+  zeroed.fill(0, Math.round(cue.start * SAMPLE_RATE) * 2, Math.round(cue.end * SAMPLE_RATE) * 2);
+  assert.throws(() => speechIn(zeroed, job.result.cues, lines.length), error => { console.log(`With ${cue.lineId} zeroed the check fails: ${error.message}`); return /l3 .*too quiet/.test(error.message); });
   console.log(`PASS: built-in voices in the packed app. ${lines.length} lines in ${seconds.toFixed(1)} s, ${(seconds / lines.length).toFixed(2)} s per line (the first line includes loading the model).`);
 } finally {
   await app.close();
