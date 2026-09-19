@@ -361,14 +361,17 @@ export function createApp({ cacheDir = path.join(ROOT, '.cache'), projectsDir = 
         await writeAll(track.handle, wavHeader(0), 0);
       }
       for (const line of job.input.scene.lines) {
-        if (line.kind !== 'dialogue' && !job.input.includeDirections) continue;
+        const heard = line.kind === 'dialogue' || job.input.includeDirections;
+        if (!heard && !job.input.warm.has(line.id)) continue;
         checkCancelled();
         const parts = [];
         for (const chunk of speechChunks(line.text)) {
-          try { parts.push(await lineAudio(chunk, job.input.voices[line.character])); }
-          catch (error) { error.message = `${line.character} (“${line.text.slice(0, 40)}…”): ${error.message}`; throw error; }
+          try { parts.push(await lineAudio(chunk, heard ? job.input.voices[line.character] : job.input.warm.get(line.id))); }
+          catch (error) { if (!heard) break; error.message = `${line.character} (“${line.text.slice(0, 40)}…”): ${error.message}`; throw error; }
           checkCancelled();
         }
+        // A direction spoken only to fill the cache is left out of both tracks.
+        if (!heard) { job.completed++; continue; }
         const pcm = Buffer.concat(parts);
         checkCancelled();
         const nextSamples = samples + (pcm.length + gap.length) / 2;
@@ -434,7 +437,13 @@ export function createApp({ cacheDir = path.join(ROOT, '.cache'), projectsDir = 
   }
   app.post('/api/render', async (req, res) => {
     if (castingAI.busy) throw fail('Local AI is guessing character voice types. Wait for suggestions, then render.', 409);
-    const input = validateRender(req.body, (await getVoices()).voices);
+    const { voices } = await getVoices();
+    const input = validateRender(req.body, voices);
+    // Chatterbox is free, so a render also speaks the directions it leaves out. Turning them on
+    // later is then a quick remix from the line cache. A paid engine is not charged for them.
+    // directionVoice is sent outside the render key, so it does not change which saved audio matches.
+    const directionVoice = voices.includes(req.body.directionVoice) ? req.body.directionVoice : '';
+    input.warm = new Map(isHosted() || input.includeDirections || !directionVoice ? [] : input.scene.lines.filter(line => line.kind !== 'dialogue').map(line => [line.id, directionVoice]));
     if (req.body.projectId !== undefined || req.body.renderKey !== undefined) {
       validateRenderKey(req.body.renderKey, input);
       await projects.get(req.body.projectId);
@@ -444,7 +453,7 @@ export function createApp({ cacheDir = path.join(ROOT, '.cache'), projectsDir = 
     // Keep bounded metadata; completed WAV exports remain on disk across restarts.
     if (jobs.size >= 100) { const expired = [...jobs.values()].find(job => ['complete', 'error'].includes(job.status)); if (expired) jobs.delete(expired.id); }
     const id = randomUUID();
-    const job = { id, status: 'queued', completed: 0, total: input.scene.lines.filter(line => line.kind === 'dialogue' || input.includeDirections).length, input, cancelled: false, ...(req.body.projectId ? { projectId: req.body.projectId, renderKey: req.body.renderKey } : {}) };
+    const job = { id, status: 'queued', completed: 0, total: input.scene.lines.filter(line => line.kind === 'dialogue' || input.includeDirections).length + input.warm.size, input, cancelled: false, ...(req.body.projectId ? { projectId: req.body.projectId, renderKey: req.body.renderKey } : {}) };
     jobs.set(id, job); queue.push(job); res.status(202).json({ jobId: id }); void drain();
   });
   app.get('/api/jobs/:id', (req, res) => {

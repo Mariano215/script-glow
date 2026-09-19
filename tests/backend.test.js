@@ -111,6 +111,25 @@ test('API renders downloadable variants and reuses cached line audio', async () 
   assert.equal(calls(), 2);
 }));
 
+test('with directions off, Chatterbox still speaks them, so turning them on is a remix from the cache', async () => withServer(async (base, calls) => {
+  const body = input();
+  body.scene.lines.splice(1, 0, { id: 'd', character: 'Narrator', text: 'She crosses to the door.', kind: 'direction' });
+  body.directionVoice = 'default';
+  const off = await completed(base, (await (await post(base, '/api/render', body)).json()).jobId);
+  assert.equal(off.status, 'complete', off.error);
+  assert.equal(off.total, 3); assert.equal(off.completed, 3);
+  assert.equal(off.result.cues.length, 2, 'The direction is spoken but not heard');
+  assert.equal(calls(), 3);
+  const on = await completed(base, (await (await post(base, '/api/render', { ...body, includeDirections: true, voices: { ...body.voices, Narrator: 'default' } })).json()).jobId);
+  assert.equal(on.status, 'complete', on.error);
+  assert.equal(on.result.cues.length, 3);
+  assert.equal(calls(), 3, 'Turning directions on needs no new speech');
+  const unknown = { ...body, directionVoice: '../../private' };
+  const skipped = await completed(base, (await (await post(base, '/api/render', unknown)).json()).jobId);
+  assert.equal(skipped.status, 'complete', skipped.error);
+  assert.equal(skipped.total, 2, 'A narrator voice that is not installed is not spoken');
+}));
+
 test('full script renders more than 300 lines with sample-exact cues and mute track', async () => withServer(async (base, calls, cacheDir) => {
   const body = { ...input(), scope: 'script', gapSeconds: 0.0001 };
   body.scene = { id: 'full-script', title: 'Full script', lines: Array.from({ length: 301 }, (_, i) => ({ ...input().scene.lines[i % 2], id: `line-${i}` })) };

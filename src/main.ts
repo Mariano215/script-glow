@@ -1343,7 +1343,10 @@ async function renderScene(playWhenReady = false) {
   const token = generation;
   job = { id: '', status: 'queued', completed: 0, total: current.lines.filter(line => line.kind === 'dialogue' || prefs.directions).length }; render();
   try {
-    const started = await api<{ jobId: string }>('/api/render', { method: 'POST', body: JSON.stringify({ ...request, projectId, renderKey: cacheKey }) });
+    // With directions off, Chatterbox still speaks them in the voice the narrator gets when they are
+    // turned on. That voice stays out of the key, so audio made before this change stays valid.
+    const directionVoice = prefs.directions || hostedEngine() || !voices.length ? undefined : prefs.cast.Narrator || assignCast([...castCharacters(), 'Narrator'], voices, prefs.role, prefs.cast, profiles, prefs.genders, prefs.manualVoices, castingConfig).Narrator;
+    const started = await api<{ jobId: string }>('/api/render', { method: 'POST', body: JSON.stringify({ ...request, projectId, renderKey: cacheKey, directionVoice }) });
     if (token !== generation) { void api(`/api/jobs/${encodeURIComponent(started.jobId)}/cancel`, { method: 'POST' }).catch(() => {}); return; }
     job.id = started.jobId;
     while (token === generation) {
