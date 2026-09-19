@@ -36,7 +36,7 @@ By default everything runs on your own machine, and scripts and audio are not se
 | Component | Required | Purpose |
 | --- | --- | --- |
 | [Node.js](https://nodejs.org) 24+ | Yes | Runs the app and API |
-| Voice server or a hosted voice key | Yes, for audio | Reads the script aloud. Use the included [voice server](voice-server/README.md) (Chatterbox, Python 3.12, NVIDIA GPU recommended), or any server with `GET /health`, `GET /v1/voices`, and `POST /v1/tts` (`{ "text", "voice" }` in, WAV out). **Record my voice** also needs `PUT /v1/voices/<name>`. Or skip the server and use an OpenAI, Google Gemini or ElevenLabs API key. |
+| Built-in voices, a voice server, or a hosted voice key | Yes, for audio | Reads the script aloud. The built-in voices need nothing else: they run on this computer's CPU and download about 360 MB once. Or use the included [voice server](voice-server/README.md) (Chatterbox, Python 3.12, NVIDIA GPU recommended), or any server with `GET /health`, `GET /v1/voices`, and `POST /v1/tts` (`{ "text", "voice" }` in, WAV out). **Record my voice** also needs `PUT /v1/voices/<name>`. Or skip the server and use an OpenAI, Google Gemini or ElevenLabs API key. |
 | [Ollama](https://ollama.com) or a hosted AI key | Optional | AI voice-type suggestions from character names. Ollama needs an installed model; OpenAI, Claude, Gemini, Grok or OpenRouter need a key. |
 | WhisperX server | Optional | Health check and verification scripts only. |
 | [FFmpeg](https://ffmpeg.org) | Optional | Faster, exact trim-to-MP4 for self-tapes. Put `ffmpeg` on the PATH or set `SCRIPT_GLOW_FFMPEG` to the program. Without it, Chrome and Edge make the MP4 by playing the take once. `SCRIPT_GLOW_FFMPEG` must point at the program itself, not a `.cmd` or `.bat` file. |
@@ -71,6 +71,7 @@ npm install
 
 Pick one:
 
+- **Built-in voices (free, private, any laptop, no setup).** Choose **Free voices on this computer** on the welcome screen, or **Built-in voices** under **Who reads the other parts** in Settings. The voice files, about 360 MB, download once into your user folder and are checked before use; a broken download resumes when you press **Try again**. There are 28 English voices, US and UK. They cannot sound like you: **Record my voice** needs Chatterbox. Hidden until the Misaki word-list provenance question is settled ([hexgrad/misaki#107](https://github.com/hexgrad/misaki/issues/107)); until then, set `SCRIPT_GLOW_EXPERIMENTAL_KOKORO=1` to turn them on for development.
 - **On your own machine (free, private, best with an NVIDIA GPU).** Follow [voice-server/README.md](voice-server/README.md) to install the voice server and the free stock voices. Start it before Script Glow. On a Mac it runs on the CPU, which works but is slow.
 - **Hosted (paid, any laptop).** Start Script Glow, open **Settings**, choose ElevenLabs, OpenAI or Google Gemini under **Who reads the other parts**, press **Add key** under **Keys for paid services**, paste your API key and press **Save key**. Then press **Test the key**, and **Save changes**. Each line is voiced once and kept, so rehearsing the same scene again costs nothing.
 
@@ -127,6 +128,7 @@ Environment variables:
 | `SCRIPT_GLOW_SECRETS` | Path of the key file (default in your user settings folder, see below). |
 | `SCRIPT_GLOW_HOME` | Folder for `data/` and `.cache/` (default: the code folder). The desktop app sets it to your user folder. |
 | `SCRIPT_GLOW_FFMPEG` | Path of the FFmpeg program, when it is not on the PATH. |
+| `SCRIPT_GLOW_EXPERIMENTAL_KOKORO` | Set to `1` to turn on the built-in voices before release. They are otherwise hidden until `server/kokoro/release-gate.json` sets `misakiProvenanceCleared` to `true`, which waits on [hexgrad/misaki#107](https://github.com/hexgrad/misaki/issues/107). |
 
 ### A voice server on another computer
 
@@ -161,8 +163,8 @@ Open http://127.0.0.1:3001.
 
 1. Open **Projects** and click **New project from a script**, or use the included sample.
 2. Click **Edit script** to check the parsed scenes and characters.
-3. Open **Cast**. Click **I'm playing this role** on your character. Pick and preview a voice for every other character.
-4. Open **Rehearsal**. Choose **Full script** or one scene and press **Play**. The first render is slower while Chatterbox loads its model.
+3. Open **Cast**. Click **I'm playing this role** on your character. Pick and preview a voice for every other character. If a name comes out wrong, type how it sounds in **Say it like**, for example `shi-VAWN` for Siobhan. Capitals mark the stressed part, and it works with every voice engine.
+4. Open **Rehearsal**. Choose **Full script** or one scene and press **Play**. The first render is slower while the voice engine loads its model.
 5. Listen in **Full cast**, then switch to **Practice** and speak your lines in the gaps. Hide my lines, Listen only, first letters, wait for me, build up line by line, and Repeat A/B all help you learn a scene.
 6. Download either WAV to rehearse away from the app, or open **Self-tape** to record yourself against the cast, trim the take, and make an MP4 for casting sites.
 
@@ -185,6 +187,7 @@ Changes to the script, cast, your role, pause length, or stage directions need n
 | `data/voice-previews/` | Your own voice sample, if you recorded one | Ignored |
 | `~/.config/script-glow/secrets.json` (or `%APPDATA%\script-glow\secrets.json`) | Hosted service API keys | Not in this repo |
 | `.cache/` | Line audio cache (512 MiB) and export cache (1 GiB), oldest files removed first | Ignored |
+| `models/kokoro-v1/` | Built-in voice files, about 360 MB, downloaded once. **Remove downloaded voices** in Settings deletes them | Ignored |
 | `artifacts/` | Verification output | Ignored |
 
 - Settings autosave. Wait for **Saved locally**. Script text needs **Save script** in the editor.
@@ -220,7 +223,10 @@ The UI uses these local endpoints. They are internal and can change.
 | DELETE | `/api/projects/:id/takes/:file` | Delete a take |
 | POST | `/api/projects/:id/takes/:file/mp4` | Trim a take (`{ start, end }` in seconds) and save an MP4 beside it |
 | GET | `/api/voices` | Voice IDs from the chosen engine, with labels and genders for hosted voices |
-| GET | `/api/voices/preview?voice=&session=` | A short sample of a hosted voice, made once and cached |
+| GET | `/api/voices/preview?voice=&session=` | A short sample of a hosted or built-in voice, made once and cached |
+| GET | `/api/kokoro` | Whether the built-in voice files are here, and how far a download has got |
+| POST | `/api/kokoro/download` | Start the download of the built-in voice files, or join the one running |
+| DELETE | `/api/kokoro` | Remove the built-in voice files |
 | POST | `/api/import` | Extract text from an uploaded PDF (10 MB max) |
 | POST | `/api/voices/mine?name=` | Send a recording of your own voice (`audio/wav`, 5 to 30 s) to Chatterbox and use it for your role |
 | POST | `/api/casting/guess-genders` | AI voice-type suggestions for character names |
@@ -251,7 +257,8 @@ npx playwright install chromium
 node verification/browser.mjs              # also: ai-casting, casting-playback, finish-tape,
                                            # highlighting-scenes, numbered-scenes, own-voice,
                                            # practice-controls, project-library, render-guard,
-                                           # self-tape, settings, studio-workspace, voice-library
+                                           # self-tape, settings, studio-workspace, voice-library,
+                                           # builtin-voices, say-it-like
 ```
 
 Checks against a running app on port 3001 (`npm start` first; GPU checks need the voice server and should run one at a time):
@@ -270,11 +277,12 @@ Service scripts read the URLs from your connection profile. Output goes to `arti
 
 ```
 server/        Express API: rendering, projects, takes, PDF import, casting AI, hosted services, keys, FFmpeg, connection profile
+server/kokoro/ Built-in voices: text to phonemes (Misaki port), model file download, the worker process
 voice-server/  Optional Chatterbox voice server (Python)
 src/           Vite + TypeScript UI: parser, casting, playback, self-tape, highlights, help, styles
 tests/         node:test suites
 verification/  Browser (Playwright) and live-service checks
-scripts/       Voice reference installers and manifests
+scripts/       Voice reference installers and manifests, built-in voice file preparation, license notices
 public/        Logo, bundled fonts, voice preview clips
 docs/          User guides and README media
 ```
@@ -289,4 +297,5 @@ docs/          User guides and README media
 
 - Fonts: DM Sans and Libre Baskerville, SIL Open Font License. See [public/fonts](public/fonts/README.md).
 - Voice previews: generated by Chatterbox from CC0 references ([Kokoro Voices](https://github.com/n33kos/kokoro-voices), [Voice-Zero](https://github.com/OwenTyme/voice-zero)). See [public/voice-previews](public/voice-previews/README.md). No personal voice samples are included.
+- Built-in voices: [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) by hexgrad, the [Misaki](https://github.com/hexgrad/misaki) word lists and G2P (ported to JavaScript), and PeterReid's grapheme-to-phoneme models, all Apache-2.0. Nothing GPL is used: no espeak-ng. Every component that ships or is downloaded, with its license text: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - Script Glow code: [MIT License](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md). Bundled fonts and voice previews keep their own licenses above.
