@@ -126,7 +126,12 @@ test('configured URLs/model are injected, public profile is read-only and privat
     await render(base);
   });
   for (const url of [`${value.chatterbox.url}/health`, `${value.whisperx.url}/health`, `${value.chatterbox.url}/v1/voices`, `${value.chatterbox.url}/v1/tts`, `${value.ollama.url}/api/generate`]) assert.ok(calls.includes(url), url);
-  await withServer({ cacheDir: path.join(dir, 'generic-cache'), previewDir, serviceFetch: async () => assert.fail('Unconfigured AI must not call services') }, async base => {
+  // With no model configured, an empty Ollama server is asked what it has installed (nothing here),
+  // so guessing is still off, but the message says why instead of pretending nothing was tried.
+  await withServer({ cacheDir: path.join(dir, 'generic-cache'), previewDir, serviceFetch: async url => {
+    if (url.endsWith('/api/tags')) return Buffer.from(JSON.stringify({ models: [] }));
+    assert.fail('Unconfigured AI must not call any other service');
+  } }, async base => {
     assert.equal((await fetch(base + '/private-voice-preview.wav')).status, 404);
     assert.equal((await (await fetch(base + '/api/connections')).json()).casting.previewUrl, undefined);
     const inference = await post(base, '/api/casting/guess-genders', { names: ['DAVID'] });

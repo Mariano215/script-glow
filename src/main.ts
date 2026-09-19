@@ -13,6 +13,7 @@ import { browserMp4, browserMp4Type, castingFileName, castingFit, countBeep, mon
 import { inferCharacters, assignCast, resolvedGender, voiceGenders, voiceOwners, validGuesses, withNameGuesses, type NameGuesses, type GenderChoice } from './casting';
 import { voiceCatalog } from './voice-catalog';
 import { openHelp } from './help';
+import { parseServerHost } from './server-address';
 
 interface RenderResult { fullUrl: string; practiceUrl: string; duration: number; cues: Cue[] }
 interface Job { id: string; status: 'queued' | 'running' | 'complete' | 'error'; completed: number; total: number; error?: string; result?: RenderResult }
@@ -348,6 +349,7 @@ async function restoreProject(file: File) {
   finally { libraryBusy = false; persist(); render(); void guessNames(); }
 }
 window.addEventListener('beforeunload', event => {
+  flushSettingsSave();
   if (libraryBusy || libraryError || savePromise || libraryReady && JSON.stringify(prefs) !== lastSynced) { event.preventDefault(); event.returnValue = ''; }
 });
 function scene(): Scene | undefined {
@@ -627,6 +629,10 @@ interface ConnectionProfile { name: string; voice: { engine: string; model: stri
 let settingsDraft: ConnectionProfile | null = null;
 let settingsResults: { service: string; url: string; ok: boolean; detail: string }[] = [];
 let settingsBusy = '';
+let settingsSaving = false;
+let settingsSaveTimer = 0;
+let settingsSavePromise: Promise<void> | null = null;
+let settingsRetryTimer = 0;
 let settingsNotice = '';
 let settingsError = false;
 // Keys for hosted services. The server only ever says whether one is set, plus a hint. A key being
@@ -637,24 +643,23 @@ let settingsKeys: { provider: string; configured: boolean; hint?: string }[] = [
 const keyDrafts: Record<string, string> = {};
 const keyEditing = new Set<string>();
 let settingsAdvancedOpen = false, settingsMoreKeysOpen = false;
-// What was last read from the server, so the Save bar shows only when something changed.
+// The connection profile last confirmed saved, so a save is skipped when nothing changed.
 let settingsSaved = '';
-const settingsDirty = () => !!settingsDraft && JSON.stringify(settingsDraft) !== settingsSaved;
 let settingsNoticeTimer = 0;
 // A success message is shown for a few seconds; an error stays until the next change.
 const settingsSaid = (message: string) => {
   settingsNotice = message; settingsError = false;
   window.clearTimeout(settingsNoticeTimer);
-  settingsNoticeTimer = window.setTimeout(() => { if (settingsNotice === message) { settingsNotice = ''; syncSaveBar(); } }, 5000);
+  settingsNoticeTimer = window.setTimeout(() => { if (settingsNotice === message) { settingsNotice = ''; syncSettingsStatus(); } }, 5000);
 };
-const syncSaveBar = () => {
-  document.querySelector('[data-screen="settings"]')?.classList.toggle('has-unsaved', settingsDirty());
-  const bar = document.querySelector<HTMLElement>('.settings-savebar');
-  if (!bar) return;
-  bar.hidden = !settingsDirty() && !settingsNotice;
-  bar.querySelectorAll<HTMLElement>('[data-action="save-services"], [data-action="reset-services"]').forEach(button => { button.hidden = !settingsDirty(); });
-  const message = bar.querySelector('.savebar-message');
-  if (message) { message.textContent = settingsNotice || 'You have unsaved changes.'; message.classList.toggle('is-bad', !!settingsNotice && settingsError); }
+// Patches only the status line, so typing in a field never loses its cursor to a full redraw.
+const syncSettingsStatus = () => {
+  const status = document.querySelector<HTMLElement>('.settings-status');
+  if (!status) return;
+  const message = settingsSaving ? 'Saving…' : settingsNotice;
+  status.textContent = message;
+  status.setAttribute('role', settingsError && settingsNotice ? 'alert' : 'status');
+  status.classList.toggle('is-bad', !!settingsNotice && settingsError);
 };
 async function loadSettings(force = false) {
   if (settingsDraft && !force) return;
@@ -687,17 +692,69 @@ async function testService(only: string) {
   } catch (error) { settingsNotice = error instanceof Error ? error.message : 'The check could not run.'; settingsError = true; }
   finally { settingsBusy = ''; render(); }
 }
-async function saveServices() {
+// Retries a save exactly once, as soon as nothing is being rendered. A later change still queues
+// its own save through queueSettingsSave, which cancels this if it gets there first.
+function scheduleSettingsRetry() {
+  window.clearInterval(settingsRetryTimer);
+  settingsRetryTimer = window.setInterval(() => {
+    if (busy() || aiLoading) return;
+    window.clearInterval(settingsRetryTimer); settingsRetryTimer = 0;
+    void saveSettingsNow();
+  }, 1000);
+}
+// Saves the draft, retrying the latest value once more if it changed again while the save was in
+// flight, so at most one PUT is ever in flight and a rejected value is never sent again on its own.
+async function saveSettingsNow(): Promise<void> {
+  window.clearTimeout(settingsSaveTimer);
+  if (settingsSavePromise) return settingsSavePromise;
   if (!settingsDraft) return;
-  settingsBusy = 'save'; settingsNotice = ''; settingsError = false; render();
-  try {
-    await api<ConnectionProfile>('/api/connections', { method: 'PUT', body: JSON.stringify(settingsDraft) });
-    await loadSettings(true);
-    // Voices and casting follow the new server; a part already cast by hand is left alone.
-    await connect();
-    settingsSaid('Saved. Voices have been read again from the server you chose.');
-  } catch (error) { settingsNotice = error instanceof Error ? error.message : 'Settings could not be saved.'; settingsError = true; }
-  finally { settingsBusy = ''; render(); }
+  settingsSavePromise = (async () => {
+    while (settingsDraft && JSON.stringify(settingsDraft) !== settingsSaved) {
+      const snapshot = JSON.stringify(settingsDraft);
+      settingsSaving = true; settingsNotice = ''; settingsError = false; syncSettingsStatus();
+      try {
+        await api<ConnectionProfile>('/api/connections', { method: 'PUT', body: snapshot });
+        settingsSaved = snapshot; settingsSaving = false;
+        // Voices and casting follow the new server; a part already cast by hand is left alone.
+        await connect();
+        settingsSaid('Saved'); render();
+      } catch (error) {
+        settingsSaving = false;
+        if (error instanceof Error && 'status' in error && (error as { status?: number }).status === 409) {
+          settingsNotice = 'Saved when the audio finishes.'; settingsError = false;
+          scheduleSettingsRetry();
+        } else {
+          settingsNotice = error instanceof Error ? error.message : 'Settings could not be saved.'; settingsError = true;
+        }
+        render();
+        return;
+      }
+    }
+  })();
+  await settingsSavePromise;
+  settingsSavePromise = null;
+}
+// Text and URL fields debounce; selects, radio cards and checkboxes save right away.
+function queueSettingsSave(immediate: boolean) {
+  window.clearTimeout(settingsSaveTimer);
+  if (immediate) void saveSettingsNow();
+  else settingsSaveTimer = window.setTimeout(() => void saveSettingsNow(), 800);
+}
+// True only while an edit is actually queued to be sent or already on the wire, never merely
+// because the draft differs from the server (the first-run dialog presets an engine choice that
+// way on purpose, without saving it).
+const settingsSavePending = () => !!settingsSaveTimer || !!settingsSavePromise;
+// A debounced save waiting out its 800ms, or one already in flight, can be cut short by leaving
+// Settings, closing the app or reloading. This sends the latest draft with `keepalive`, so the
+// request survives the page going away; it does not wait for a reply or touch the retry path,
+// since nothing here will still be running to see one.
+function flushSettingsSave() {
+  const pending = settingsSavePending();
+  window.clearTimeout(settingsSaveTimer); settingsSaveTimer = 0;
+  if (!pending || !settingsDraft) return;
+  const snapshot = JSON.stringify(settingsDraft);
+  if (snapshot === settingsSaved) return;
+  fetch('/api/connections', { method: 'PUT', keepalive: true, headers: { 'Content-Type': 'application/json', ...sessionHeader() }, body: snapshot }).catch(() => {});
 }
 // A new install has no settings file. Skip saves the defaults. The other two choices open Settings,
 // where Save writes the file, so the welcome comes back at the next launch until voices are set up.
@@ -708,26 +765,91 @@ function showFirstRun() {
   const dialog = document.createElement('dialog');
   dialog.className = 'first-run';
   dialog.setAttribute('aria-labelledby', 'first-run-title');
-  dialog.innerHTML = `<h2 id="first-run-title">Welcome to Script Glow</h2>
+  const welcomeStep = () => `<h2 id="first-run-title">Welcome to Script Glow</h2>
     <p>Choose who reads the other parts. You can change this at any time in Settings.</p>
     <div class="first-run-choices">
       <button type="button" data-choice="hosted"><strong>Use a paid voice service</strong><span>OpenAI, Google Gemini or ElevenLabs. Works on any laptop. You need an API key from the service.</span></button>
       <button type="button" data-choice="own"><strong>I have my own voice server</strong><span>Chatterbox on this computer or another one. Free and private.</span></button>
       <button type="button" data-choice="skip"><strong>Skip for now</strong><span>Look around with the sample script. The cast cannot read until you choose a voice service.</span></button>
     </div>`;
+  const hostStep = () => `<h2 id="first-run-title">Where is your voice server?</h2>
+    <p>The computer that runs Chatterbox. Ollama and WhisperX are set up on the same computer with their standard ports. You can change each one later in Settings.</p>
+    <form data-form="first-run-host">
+      <label class="visually-hidden" for="first-run-host">Voice server address</label>
+      <input id="first-run-host" type="text" placeholder="192.168.1.20" autocomplete="off" spellcheck="false">
+      <p class="first-run-error" role="alert" hidden></p>
+      <div class="first-run-actions">
+        <button type="submit" class="button primary">Connect</button>
+        <button type="button" class="text-link" data-action="first-run-manual">Enter addresses by hand</button>
+      </div>
+    </form>`;
+  dialog.innerHTML = welcomeStep();
+  // Sends focus to the Chatterbox address field once Settings is on screen, however it got there.
+  const focusChatterbox = () => {
+    const field = document.getElementById('service-chatterbox');
+    field?.scrollIntoView({ block: 'center', behavior: 'instant' });
+    (field as HTMLElement | null)?.focus();
+  };
+  const openSettingsOn = (engine: 'openai' | 'chatterbox', focus: boolean) => {
+    if (settingsDraft) settingsDraft.voice.engine = engine;
+    render();
+    const alreadyOnSettings = location.hash === '#settings';
+    if (!alreadyOnSettings) location.hash = '#settings';
+    if (focus) {
+      if (alreadyOnSettings) requestAnimationFrame(focusChatterbox);
+      else window.addEventListener('hashchange', () => requestAnimationFrame(focusChatterbox), { once: true });
+    }
+  };
+  dialog.addEventListener('submit', async event => {
+    event.preventDefault();
+    const field = dialog.querySelector<HTMLInputElement>('#first-run-host');
+    const error = dialog.querySelector<HTMLElement>('.first-run-error');
+    const host = parseServerHost(field?.value ?? '');
+    if (!host) {
+      if (error) { error.textContent = 'Enter the computer’s address, for example 192.168.1.20.'; error.hidden = false; }
+      // Pressing Enter to submit also sends a synthetic click to the submit button, which can
+      // move focus there right after this runs; putting the focus call last wins that race.
+      requestAnimationFrame(() => field?.focus());
+      return;
+    }
+    dialog.close();
+    await loadSettings(true);
+    if (settingsDraft) {
+      settingsDraft.chatterbox.url = `${host.scheme}://${host.host}:8095`;
+      settingsDraft.ollama.url = `${host.scheme}://${host.host}:11434`;
+      settingsDraft.whisperx.url = `${host.scheme}://${host.host}:8010`;
+      await saveSettingsNow();
+    }
+    openSettingsOn('chatterbox', false);
+    void testService('chatterbox'); void testService('names');
+  });
   dialog.addEventListener('click', async event => {
-    const choice = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-choice]')?.dataset.choice;
+    const target = event.target as HTMLElement;
+    const choice = target.closest<HTMLButtonElement>('[data-choice]')?.dataset.choice;
+    const action = target.closest<HTMLButtonElement>('[data-action]')?.dataset.action;
+    if (choice === 'own') {
+      dialog.innerHTML = hostStep();
+      dialog.querySelector<HTMLInputElement>('#first-run-host')?.focus();
+      return;
+    }
+    if (action === 'first-run-manual') {
+      dialog.close();
+      await loadSettings(true);
+      openSettingsOn('chatterbox', true);
+      return;
+    }
     if (!choice) return;
     dialog.close();
     await loadSettings(true);
     if (choice === 'skip') {
-      await saveServices();
+      // Nothing changed relative to what was just read, so the draft is not "dirty" on its own;
+      // force one save anyway, since a new install has no profile file until something writes it.
+      settingsSaved = '';
+      await saveSettingsNow();
       if (settingsError) flash(settingsNotice || 'The default voices could not be saved.', true);
       return;
     }
-    if (settingsDraft) settingsDraft.voice.engine = choice === 'hosted' ? 'openai' : 'chatterbox';
-    render();
-    if (location.hash !== '#settings') location.hash = '#settings';
+    openSettingsOn(choice === 'hosted' ? 'openai' : 'chatterbox', choice === 'own');
   });
   dialog.addEventListener('close', () => dialog.remove());
   document.body.append(dialog);
@@ -1003,7 +1125,7 @@ function settingsMarkup(): string {
   const keyFor = (provider: string) => settingsKeys.find(item => item.provider === provider && item.configured);
   const engine = draft.voice.engine, spec = settingsEngines[engine];
   const engines: [string, string, string, string][] = [
-    ['chatterbox', 'Chatterbox', 'Runs on your own computer. Private and free. Fast with an NVIDIA graphics card, slow without one.', 'Free · Private'],
+    ['chatterbox', 'Chatterbox', 'Free and private. Runs on this computer or on your own voice server.', 'Free · Private'],
     ['elevenlabs', 'ElevenLabs', 'The most natural voices. Uses the voices in your ElevenLabs account.', 'Paid · Your library'],
     ['openai', 'OpenAI', 'Clear, reliable voices. Any laptop.', 'Paid · 13 voices'],
     ['gemini', 'Google Gemini', 'A wide range of voices. Any laptop.', 'Paid · 30 voices'],
@@ -1041,11 +1163,12 @@ function settingsMarkup(): string {
   return `<div class="settings-layout">
     <nav class="settings-nav" aria-label="Settings sections"><p class="settings-nav-title">On this page</p>${sections.map(([id, label], index) => `<button type="button" data-action="settings-jump" data-target="${id}" ${index === 0 ? 'aria-current="true"' : ''}>${label}</button>`).join('')}</nav>
     <form class="settings-form" autocomplete="off">
+      <p class="settings-status ${settingsError ? 'is-bad' : ''}" role="${settingsError && settingsNotice ? 'alert' : 'status'}">${esc(settingsSaving ? 'Saving…' : settingsNotice)}</p>
       <section class="settings-section" id="set-voices" aria-labelledby="set-voices-title">
         <h2 tabindex="-1" id="set-voices-title">Who reads the other parts</h2>
         <p class="section-lead">The engine that speaks your scene partners. Parts you cast by hand are kept when you switch.</p>
         <fieldset class="engine-grid"><legend class="visually-hidden">Voice engine</legend>${engines.map(engineCard).join('')}</fieldset>
-        ${engine === 'chatterbox' ? row('service-chatterbox', 'Chatterbox server', 'The address of your voice server. Script Glow only asks it for its voices, and sends it one only when you record your own.', `${input('service-chatterbox', draft.chatterbox.url)}${result('chatterbox')}`)
+        ${engine === 'chatterbox' ? row('service-chatterbox', 'Your Chatterbox server address', 'For example http://192.168.1.20:8095. Script Glow only asks it for its voices, and sends it one only when you record your own.', `${input('service-chatterbox', draft.chatterbox.url, 'url', 'placeholder="For example http://192.168.1.20:8095"')}${result('chatterbox')}`)
           : `<p class="callout" role="note"><strong>${esc(spec?.label ?? engine)} is paid.</strong> When you make audio, the lines of that scene are sent to ${esc(spec?.label ?? engine)} to be read aloud. Lines already made are kept and never sent twice. Your script file and your takes stay here.</p>
           ${keyFor(engine) ? '' : `<p class="callout is-warn" role="note">No ${esc(spec?.label ?? engine)} key yet. <button type="button" class="text-link" data-action="settings-jump" data-target="set-keys">Add it under Keys</button>.</p>`}
           ${row('service-voice-model', 'Model', 'The recommended one suits most scenes.', `<select id="service-voice-model" ${off}>${(spec?.models ?? []).map(name => `<option value="${name === spec?.model ? '' : esc(name)}" ${(draft.voice.model || spec?.model) === name ? 'selected' : ''}>${esc(name)}${name === spec?.model ? ' (recommended)' : ''}</option>`).join('')}</select>${result('voice', true)}`)}`}
@@ -1063,7 +1186,7 @@ function settingsMarkup(): string {
         ${row('service-names-engine', 'Who guesses', namesEngine === 'ollama' ? 'Ollama runs on this computer and is free.' : `${esc(namesSpec?.label ?? namesEngine)} charges a very small amount per guess.`, `<select id="service-names-engine" ${off}>${[['ollama', 'Ollama (this computer, free)'], ['openai', 'OpenAI'], ['anthropic', 'Claude (Anthropic)'], ['gemini', 'Google Gemini'], ['xai', 'Grok (xAI)'], ['openrouter', 'OpenRouter']].map(([value, label]) => `<option value="${value}" ${namesEngine === value ? 'selected' : ''}>${label}</option>`).join('')}</select>`)}
         ${namesEngine === 'ollama'
           ? `${row('service-ollama', 'Ollama server', 'The address of your Ollama server.', input('service-ollama', draft.ollama.url))}
-             ${row('service-model', 'Installed model', 'Leave empty to choose every voice type yourself. Script Glow never downloads a model.', `${input('service-model', draft.ollama.model, 'text', 'placeholder="for example gemma:2b"')}${result('names')}`)}`
+             ${row('service-model', 'Installed model', 'Leave empty to use the first model installed on your Ollama server. Script Glow never downloads a model.', `${input('service-model', draft.ollama.model, 'text', 'placeholder="for example gemma:2b"')}${result('names')}`)}`
           : `${keyFor(namesEngine) ? '' : `<p class="callout is-warn" role="note">No ${esc(namesSpec?.label ?? namesEngine)} key yet. <button type="button" class="text-link" data-action="settings-jump" data-target="set-keys">Add it under Keys</button>.</p>`}
              ${row('service-names-model', 'Model', 'Leave empty for the recommended model, or type any model this service offers.', `${input('service-names-model', draft.names.model, 'text', `list="names-models" placeholder="${esc(namesSpec?.model ?? '')} (recommended)"`)}<datalist id="names-models">${(namesSpec?.models ?? []).map(name => `<option value="${esc(name)}"></option>`).join('')}</datalist>${result('names', true)}`)}`}
       </section>
@@ -1081,18 +1204,13 @@ function settingsMarkup(): string {
       <section class="settings-section" id="set-advanced" aria-labelledby="set-advanced-title">
         <h2 tabindex="-1" id="set-advanced-title">Advanced</h2>
         <details class="advanced"${settingsAdvancedOpen ? ' open' : ''}><summary><span class="when-closed">Show advanced settings</span><span class="when-open">Hide advanced settings</span></summary>
-          ${engine === 'chatterbox' ? '' : row('service-chatterbox', 'Chatterbox server', 'Used for your own voice, and when you switch back to Chatterbox.', `${input('service-chatterbox', draft.chatterbox.url)}${result('chatterbox')}`)}
+          ${engine === 'chatterbox' ? '' : row('service-chatterbox', 'Your Chatterbox server address', 'Used for your own voice, and when you switch back to Chatterbox.', `${input('service-chatterbox', draft.chatterbox.url, 'url', 'placeholder="For example http://192.168.1.20:8095"')}${result('chatterbox')}`)}
           ${row('service-whisperx', 'WhisperX server', 'Not used yet. Ready for when Script Glow listens for your lines.', `${input('service-whisperx', draft.whisperx.url)}${result('whisperx')}`)}
           ${row('service-name', 'Name of this set-up', 'Shown when Script Glow starts, so you know which computer you are on.', input('service-name', draft.name, 'text'))}
           <label class="checkbox-label"><input type="checkbox" id="service-legacy" ${draft.chatterbox.legacyCache ? 'checked' : ''} ${off}> Reuse audio made by an older Script Glow</label>
           <p class="library-note">Addresses are saved in <code>data/connections.json</code>, which never holds a key, so it is safe to copy to another computer.</p>
         </details>
       </section>
-      <div class="settings-savebar" ${settingsDirty() || settingsNotice ? '' : 'hidden'}>
-        <p class="savebar-message ${settingsError ? 'is-bad' : ''}" role="status">${esc(settingsNotice || 'You have unsaved changes.')}</p>
-        <button type="button" class="text-link" data-action="reset-services" ${off} ${settingsDirty() ? '' : 'hidden'}>Undo</button>
-        <button type="button" class="button primary" data-action="save-services" ${off} ${settingsDirty() ? '' : 'hidden'}>${settingsBusy === 'save' ? 'Saving…' : 'Save changes'}</button>
-      </div>
     </form>
   </div>`;
 }
@@ -1262,6 +1380,9 @@ function applyScreen(focus = false) {
 window.addEventListener('hashchange', () => {
   const leaving = screen;
   screen = screenFromHash();
+  // The app is still running, so a debounced or waiting settings save can go through the normal
+  // path (retries, 400/409 handling and all) instead of the last-resort one below.
+  if (leaving === 'settings' && screen !== 'settings' && settingsSavePending()) void saveSettingsNow();
   // Navigating away from the self-tape screen gives the camera back.
   if (leaving === 'selftape' && screen !== 'selftape') void (recorder?.recording ? stopTake().then(closeCamera) : closeCamera());
   // Only the screen on show carries a copy of the script, so a second one never doubles the page.
@@ -1494,7 +1615,6 @@ app.addEventListener('click', async event => {
   if (action === 'clear-marks') { prefs.loopA = ''; prefs.loopB = ''; applyRate(); persist(); }
   if (action === 'build-restart') { restartBuild(); if (result) audio.currentTime = (prefs.loopA && result.cues.find(item => item.lineId === prefs.loopA)?.start) || 0; }
   if (action === 'test-service') { await testService(target.dataset.service!); return; }
-  if (action === 'save-services') { await saveServices(); return; }
   if (action === 'voice-record') { discardVoice(); await startVoiceRecording(); return; }
   if (action === 'voice-stop') { await stopVoiceRecording(); return; }
   if (action === 'voice-cancel') { await stopVoiceRecording(true); return; }
@@ -1514,7 +1634,6 @@ app.addEventListener('click', async event => {
   if (action === 'cancel-key') { keyEditing.delete(target.dataset.provider!); delete keyDrafts[target.dataset.provider!]; render(); return; }
   if (action === 'settings-jump') { const section = document.getElementById(target.dataset.target!); settingsJumpTarget = section?.id ?? ''; markSettingsSection(); section?.classList.remove('is-flashed'); void section?.offsetWidth; section?.classList.add('is-flashed'); setTimeout(() => section?.classList.remove('is-flashed'), 1500); if (section?.id === 'set-advanced') { settingsAdvancedOpen = true; section.querySelector('details')?.setAttribute('open', ''); } section?.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); section?.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true }); return; }
   if (action === 'save-key' || action === 'remove-key') { await changeKey(target.dataset.provider!, action === 'remove-key'); return; }
-  if (action === 'reset-services') { await loadSettings(true); settingsResults = []; settingsNotice = ''; settingsError = false; render(); return; }
   if (action === 'tape-drag') return;
   if (action === 'tape-focus') { setTakeFocus(!takeFocus); return; }
   if (action === 'tape-centre') { prefs.tapeX = 50; prefs.tapeY = 78; prefs.tapeW = 0; prefs.tapeH = 0; persist(); render(); return; }
@@ -1588,7 +1707,7 @@ addEventListener('keydown', event => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'P
 app.addEventListener('toggle', event => { const target = event.target as HTMLElement; if (target.classList?.contains('advanced')) settingsAdvancedOpen = (target as HTMLDetailsElement).open; if (target.classList?.contains('more-keys')) settingsMoreKeysOpen = (target as HTMLDetailsElement).open; }, true);
 app.addEventListener('input', event => {
   const target = event.target as HTMLInputElement;
-  if (settingsDraft && target.closest('.settings-form') && target.id.startsWith('service-') && (target.type === 'url' || target.type === 'text')) { applySettingField(target); settingsNotice = ''; syncSaveBar(); }
+  if (settingsDraft && target.closest('.settings-form') && target.id.startsWith('service-') && (target.type === 'url' || target.type === 'text')) { applySettingField(target); settingsNotice = ''; syncSettingsStatus(); queueSettingsSave(false); }
   if (target.id === 'seek' && result) audio.currentTime = Number(target.value);
   if (target.id === 'reader-level') { const out = document.querySelector('output[for="reader-level"]'); if (out) out.textContent = `${Math.round(Number(target.value) * 100)}%`; }
   if (target.id === 'line-gap') { const label = document.querySelector('#gap-value'); if (label) label.textContent = `${Number(target.value).toFixed(1)}s`; }
@@ -1622,11 +1741,12 @@ app.addEventListener('change', async event => {
   }
   if (target.id === 'voice-file') { const chosen = target.files?.[0]; target.value = ''; if (chosen) { if (voiceRec) await stopVoiceRecording(true); await voiceFromAudio(chosen); render(); } return; }
   if (target.id.startsWith('key-')) { keyDrafts[target.id.slice(4)] = target.value; return; }
-  if (target.name === 'service-engine' && settingsDraft) { settingsDraft.voice = { engine: target.value, model: '' }; settingsResults = []; settingsNotice = ''; render(); return; }
+  if (target.name === 'service-engine' && settingsDraft) { settingsDraft.voice = { engine: target.value, model: '' }; settingsResults = []; settingsNotice = ''; render(); queueSettingsSave(true); return; }
   if (target.id.startsWith('service-') && settingsDraft) {
-    if (applySettingField(target)) return;
+    if (applySettingField(target)) { queueSettingsSave(true); return; }
     settingsResults = []; settingsNotice = '';
-    syncSaveBar();
+    syncSettingsStatus();
+    queueSettingsSave(true);
     return;
   }
   if (target.id === 'reader-level') { prefs.readerLevel = Number(target.value); setReaderLevel(prefs.readerLevel); persist(); }
@@ -1741,7 +1861,7 @@ document.addEventListener('keydown', event => {
 // A take that runs to the end of the scene stops itself, so nothing records an empty room.
 audio.addEventListener('ended', () => { if (recorder?.recording) void stopTake(); });
 // Closing the tab or reloading gives the camera back without waiting for the page to die.
-addEventListener('pagehide', () => { recorder?.release(); recorder = null; void stopVoiceRecording(true); });
+addEventListener('pagehide', () => { flushSettingsSave(); recorder?.release(); recorder = null; void stopVoiceRecording(true); });
 audio.addEventListener('seeked', () => syncActiveLine(true));
 audio.addEventListener('play', () => { stopVoicePreview(); syncActiveLine(true); void resumeMixer(); });
 // A phone or tablet has no Space key, so the wording follows the kind of screen.
