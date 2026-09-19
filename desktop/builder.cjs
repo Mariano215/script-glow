@@ -35,12 +35,22 @@ async function ensureCanvasBinding(context) {
   }
 }
 
+// Playwright's electron.launch drives the app through --inspect, so the unsigned CI smoke-test
+// build may keep that one fuse on. A build with signing settings is always strict.
+const inspectable = process.env.SCRIPT_GLOW_INSPECTABLE_BUILD === '1';
+if (inspectable && (process.env.CSC_LINK || azure)) throw new Error('SCRIPT_GLOW_INSPECTABLE_BUILD is for unsigned test builds only.');
+
 module.exports = {
   appId: 'io.github.mariano215.scriptglow',
   productName: 'Script Glow',
   directories: { output: 'release' },
   files: ['desktop/**', 'server/**', 'dist/**', 'package.json'],
   beforePack: ensureCanvasBinding,
+  // No running the app binary as Node, no NODE_OPTIONS, no --inspect, and the app code only from
+  // app.asar: a local program cannot borrow the app's camera and microphone access that way.
+  // Flipping a fuse edits the binary, so an unsigned Mac build is signed ad hoc again or Apple
+  // silicon refuses to start it. A signed build is signed properly after this step.
+  electronFuses: { runAsNode: false, enableNodeOptionsEnvironmentVariable: false, enableNodeCliInspectArguments: inspectable, onlyLoadAppFromAsar: true, resetAdHocDarwinSignature: true },
   // pdfjs-dist's legacy build needs @napi-rs/canvas (a native module) at runtime for its
   // DOMMatrix/Path2D polyfills outside a browser. The worker's own files are named directly;
   // it needs no other sibling from server/.

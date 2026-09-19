@@ -53,6 +53,9 @@ jobs:
     env:
       # Unsigned test build: signing belongs to the release workflow.
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # Playwright drives the app through --inspect, so this test build keeps that fuse on.
+      # The release build never sets it (desktop/builder.cjs).
+      SCRIPT_GLOW_INSPECTABLE_BUILD: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

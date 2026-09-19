@@ -12,6 +12,8 @@ import { createSecrets, SECRETS_FILE } from './secrets.js';
 import { ENGINES, TEXT_ENGINES, hostedText, hostedVoices } from './hosted.js';
 import { findFfmpeg } from './video.js';
 
+// Set only inside the desktop app's main process, where the PDF worker runs as a utility process.
+const utilityProcess = process.versions.electron && process.type === 'browser' ? (await import('electron')).utilityProcess : null;
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 // Projects, cache and voice samples. The desktop app points this at the user's own folder,
 // because an installed app cannot write next to its code. The built page is always read from ROOT.
@@ -294,20 +296,20 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
     try { text = await new Promise((resolve, reject) => {
       // PDF.js loads native canvas helpers. A subprocess isolates native runtime
       // failures and teardown from the API process (worker threads do not).
-      // Inside the desktop app process.execPath is Electron, which runs as plain Node only with
-      // ELECTRON_RUN_AS_NODE. The worker is unpacked from the app archive, so it is read from there.
+      // The desktop app cannot run its own binary as Node (the RunAsNode fuse is off), so there the
+      // worker is an Electron utility process. It is unpacked from the app archive and read from there.
       const workerFile = fileURLToPath(new URL('./pdf-worker.js', import.meta.url)).replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
-      const worker = fork(workerFile, [], {
-        execArgv: ['--max-old-space-size=256'], serialization: 'advanced',
-        stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true,
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-      });
+      // Both cap the worker's heap at 256 MB: a utility process takes V8 flags only through --js-flags.
+      const worker = utilityProcess
+        ? utilityProcess.fork(workerFile, [], { execArgv: ['--js-flags=--max-old-space-size=256'], stdio: 'ignore', serviceName: 'Script Glow PDF import' })
+        : fork(workerFile, [], { execArgv: ['--max-old-space-size=256'], serialization: 'advanced', stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true });
       let received = false;
       const timer = setTimeout(() => { worker.kill(); reject(fail('PDF extraction timed out. Try a smaller PDF or paste text.', 422)); }, 30000);
-      worker.once('message', message => { received = true; clearTimeout(timer); message.error ? reject(fail(message.error, 422)) : resolve(message.text); });
+      // A utility process keeps running after it answers, so it is stopped once the answer is in.
+      worker.once('message', message => { received = true; clearTimeout(timer); if (utilityProcess) worker.kill(); message.error ? reject(fail(message.error, 422)) : resolve(message.text); });
       worker.once('error', () => { clearTimeout(timer); reject(fail('Could not extract this PDF. Try an unlocked text PDF or paste text.', 422)); });
       worker.once('exit', () => { if (!received) { clearTimeout(timer); reject(fail('PDF extraction stopped. Try a smaller PDF or paste text.', 422)); } });
-      worker.send(data);
+      utilityProcess ? worker.postMessage(data) : worker.send(data);
     }); } finally { activeImports--; }
     res.json({ text });
   });

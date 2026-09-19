@@ -1,6 +1,14 @@
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { pageText } from './pdf-text.js';
-process.once('message', async data => {
+// pdfjs takes an Electron utility process (process.type 'utility') for a browser and skips its
+// Node setup: the native canvas helpers and in-process parsing. This worker is plain Node apart
+// from its message channel, so process.type is hidden while pdfjs and its parser load (both read
+// it once, at load) and then put back.
+const type = Object.getOwnPropertyDescriptor(process, 'type');
+if (type) delete process.type;
+const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+globalThis.pdfjsWorker = await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
+if (type) Object.defineProperty(process, 'type', type);
+async function extract(data) {
 // Byte input only: no remote document URLs or external font/CMap URLs.
 const loading = getDocument({
   data: new Uint8Array(data), isEvalSupported: false,
@@ -29,5 +37,9 @@ try {
 } finally {
   await loading.destroy();
 }
-process.send(result, () => process.disconnect());
-});
+return result;
+}
+// The desktop app starts this file with Electron's utilityProcess, which talks over
+// process.parentPort. Plain Node (npm start, tests) forks it with child_process.
+if (process.parentPort) process.parentPort.once('message', async ({ data }) => process.parentPort.postMessage(await extract(data)));
+else process.once('message', async data => process.send(await extract(data), () => process.disconnect()));
