@@ -37,6 +37,19 @@ jobs:
           fi
           echo "Tag $TAG_NAME matches package.json."
       - run: npm ci
+      # The built-in voices ship switched on only once the Misaki word lists are confirmed permissive
+      # (release gate in docs/superpowers/specs/2026-09-19-kokoro-engine-design.md). Mariano sets the
+      # flag. This step only reports: an app release goes ahead either way, with the voices off until then.
+      - name: Report the built-in voices release gate
+        shell: bash
+        run: |
+          if [[ "$(node -p "require('./server/kokoro/release-gate.json').misakiProvenanceCleared")" == "true" ]]; then
+            line="Built-in voices: ON in this release (server/kokoro/release-gate.json has misakiProvenanceCleared: true)."
+          else
+            line="Built-in voices: OFF in this release. They wait on the Misaki word-list provenance (server/kokoro/release-gate.json)."
+          fi
+          echo "$line"
+          echo "$line" >> "$GITHUB_STEP_SUMMARY"
       - run: npm test
       - run: npm run build
       - name: Validate signing secrets present
