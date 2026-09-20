@@ -100,7 +100,8 @@ const sections: [string, string, string][] = [
       <li>Go back up to <strong>Who reads the other parts</strong>, pick that service, and press <strong>Test the key</strong>. A green tick means it worked.</li>
       <li>Press <strong>Save changes</strong> at the bottom of the page.</li>
     </ol>
-    <p>Once saved, a key is never shown again, only its first and last few characters. That is normal. If you lose it, make a new one on the service’s website and press <strong>Replace</strong> here. Keys are kept in your private user folder, never in the project, and never in a backup you send to someone else.</p>`],
+    <p>Once saved, a key is never shown again, only its first and last few characters. That is normal. If you lose it, make a new one on the service’s website and press <strong>Replace</strong> here. Keys are kept in your private user folder, never in the project, and never in a backup you send to someone else.</p>
+    <p>These companies redesign their websites from time to time, so a button may have moved since this was written. The links here go to the right page rather than describing where to click. If one is wrong, say so with <strong>Ask for help on GitHub</strong> at the bottom of this guide and it will be fixed.</p>`],
   ['service-kokoro', 'Built-in voices, step by step', `<p><strong>Free. Private. No account and no key.</strong> These voices run inside Script Glow on this computer. Nothing you write or record leaves the machine.</p>
     <ol>
       <li>Open <strong>Settings</strong>.</li>
@@ -125,11 +126,9 @@ const sections: [string, string, string][] = [
   ['service-elevenlabs', 'ElevenLabs, step by step', `<p><strong>Paid.</strong> The most natural voices, and it uses the voices already in your ElevenLabs account. You are charged for the dialogue it reads, counted by character. Lines Script Glow has already made are kept and never paid for twice.</p>
     <p>Getting the key:</p>
     <ol>
-      <li>Go to <strong>elevenlabs.io</strong> in your browser and sign in, or create an account.</li>
-      <li>Click your profile picture in the top right corner.</li>
-      <li>Choose <strong>API Keys</strong> from the menu.</li>
-      <li>Press <strong>Create API Key</strong>, give it any name you like, such as Script Glow.</li>
-      <li>Copy the key it shows you. <strong>It is only shown once.</strong> Paste it somewhere safe for the next minute if you need to.</li>
+      <li>Go to <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener noreferrer">elevenlabs.io/app/settings/api-keys</a> and sign in, or create an account. That link goes straight to the right page.</li>
+      <li>Press the button to create a new API key, and give it any name you like, such as Script Glow.</li>
+      <li>Copy the key it shows you. Copy it now: these services normally show a key once and never again. If you lose it, delete it there and make another.</li>
     </ol>
     <p>Putting it into Script Glow:</p>
     <ol>
@@ -141,11 +140,10 @@ const sections: [string, string, string][] = [
   ['service-openai', 'OpenAI, step by step', `<p><strong>Paid.</strong> Clear, reliable voices that work on any laptop. You are charged for the dialogue it reads. Lines already made are kept and never paid for twice.</p>
     <p>Getting the key:</p>
     <ol>
-      <li>Go to <strong>platform.openai.com</strong> and sign in, or create an account. Note that this is the developer site, not the ChatGPT one, and a ChatGPT Plus subscription does not cover it.</li>
-      <li>Add a payment method under <strong>Billing</strong> and buy some credit. Without credit the key will be refused.</li>
-      <li>Open the <strong>API keys</strong> page from the left menu.</li>
-      <li>Press <strong>Create new secret key</strong> and give it any name.</li>
-      <li>Copy the key. <strong>It is only shown once.</strong></li>
+      <li>Go to <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com/api-keys</a> and sign in, or create an account.</li>
+      <li>This is the developer site, not ChatGPT. <strong>A ChatGPT Plus subscription does not pay for it.</strong> API use is billed separately, so check that the account has a payment method and some credit under Billing.</li>
+      <li>Create a new secret key and give it any name.</li>
+      <li>Copy the key. Copy it now: these services normally show a key once and never again.</li>
     </ol>
     <p>Putting it into Script Glow:</p>
     <ol>
@@ -156,9 +154,8 @@ const sections: [string, string, string][] = [
   ['service-gemini', 'Google Gemini, step by step', `<p><strong>Paid.</strong> A wide range of voices, and it works on any laptop. You are charged for the dialogue it reads. Lines already made are kept and never paid for twice.</p>
     <p>Getting the key:</p>
     <ol>
-      <li>Go to <strong>aistudio.google.com</strong> and sign in with your Google account.</li>
-      <li>Press <strong>Get API key</strong>, at the top left.</li>
-      <li>Press <strong>Create API key</strong>. If it asks for a project, accept the one it offers.</li>
+      <li>Go to <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/app/apikey</a> and sign in with your Google account.</li>
+      <li>Create an API key. Google AI Studio makes a default project for a new account on its own, so accept whatever project it offers.</li>
       <li>Copy the key it shows you.</li>
     </ol>
     <p>Putting it into Script Glow:</p>
@@ -172,11 +169,12 @@ const sections: [string, string, string][] = [
     <ol>
       <li>Go to <strong>ollama.com</strong> and download Ollama for your system. Install it like any other program.</li>
       <li>Open it once so it is running. It sits in the menu bar on a Mac, or the system tray on Windows.</li>
-      <li>Give it a model to use. Open Terminal on a Mac, or Command Prompt on Windows, and type <code>ollama pull gemma:2b</code> then press Enter. Wait for it to finish.</li>
+      <li>Give it a model to use. Open Terminal on a Mac, or Command Prompt on Windows, and type <code>ollama pull</code> followed by a model name, then press Enter. Wait for it to finish.</li>
+      <li>Pick a small model. All it does here is guess whether a name sounds like a man or a woman, so the smallest one on <a href="https://ollama.com/library" target="_blank" rel="noopener noreferrer">ollama.com/library</a> is plenty. The big ones are several gigabytes and need a lot of memory for no benefit here.</li>
       <li>In Script Glow, open <strong>Settings</strong>, then <strong>Guess voice types from names</strong>.</li>
       <li>Under <strong>Who guesses</strong>, choose <strong>Ollama (this computer, free)</strong>.</li>
       <li>Leave <strong>Ollama server</strong> as <code>http://127.0.0.1:11434</code> unless you run it elsewhere.</li>
-      <li>Type <code>gemma:2b</code> under <strong>Installed model</strong>, or leave it empty to use the first model you installed.</li>
+      <li>Leave <strong>Installed model</strong> empty to use the first model you installed, or type its exact name.</li>
       <li>Press <strong>Save changes</strong>.</li>
     </ol>
     <p>Script Glow never downloads a model by itself. If suggestions do not appear, the model is usually missing: run the <code>ollama pull</code> step again.</p>`],
