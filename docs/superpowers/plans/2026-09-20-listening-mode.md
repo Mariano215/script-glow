@@ -1,5 +1,7 @@
 # Listening mode, phase one
 
+Done. Released in 0.4.0. Phase two followed in 0.5.0.
+
 Spec: `docs/superpowers/specs/2026-09-20-listening-mode-design.md`. Date: 2026-09-20.
 
 Phase one only: the microphone level ends the wait. No transcript, no network, no key, no new server route. Space and **Continue** keep working throughout.
@@ -18,4 +20,4 @@ Each step is finished when its check passes.
 
 ## Not in this phase
 
-The transcript layer, `lineMatch`, `POST /api/listen/transcribe`, the paid streaming engine, and a click on the script background to continue.
+The transcript layer, `lineMatch`, `POST /api/listen/transcribe`, the paid streaming engine, and a click on the script background to continue. Everything but the last two landed in 0.5.0.
