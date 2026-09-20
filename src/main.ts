@@ -834,11 +834,11 @@ function showFirstRun() {
   const dialog = document.createElement('dialog');
   dialog.className = 'first-run';
   dialog.setAttribute('aria-labelledby', 'first-run-title');
-  const welcomeStep = () => `<h2 id="first-run-title">Welcome to Script Glow</h2>
+  const welcomeStep = () => `<h2 id="first-run-title">Welcome to Script Glow</h2> <button type="button" class="info-button" data-action="help" data-help="quick-start" aria-haspopup="dialog" aria-label="Open the guide: how to set up a voice service">i</button>
     <p>Choose who reads the other parts. You can change this at any time in Settings.</p>
     <div class="first-run-choices">
       ${kokoroAvailable ? `<button type="button" data-choice="builtin"><strong>Free voices on this computer <em>Recommended</em></strong><span>No setup. Works on any laptop. Downloads about ${kokoroMB()} MB once.</span></button>` : ''}
-      <button type="button" data-choice="hosted"><strong>Use a paid voice service</strong><span>OpenAI, Google Gemini or ElevenLabs. Works on any laptop. You need an API key from the service.</span></button>
+      <button type="button" data-choice="hosted"><strong>Use a paid voice service${kokoroAvailable ? '' : ' <em>Recommended</em>'}</strong><span>OpenAI, Google Gemini or ElevenLabs. Works on any laptop. You need an API key from the service, which charges for the audio it makes.</span></button>
       <button type="button" data-choice="own"><strong>I have my own voice server</strong><span>Chatterbox on this computer or another one. Free and private.</span></button>
       <button type="button" data-choice="skip"><strong>Skip for now</strong><span>Look around with the sample script. The cast cannot read until you choose a voice service.</span></button>
     </div>`;
@@ -902,6 +902,7 @@ function showFirstRun() {
       dialog.querySelector<HTMLInputElement>('#first-run-host')?.focus();
       return;
     }
+    if (action === 'help') { openHelp(target.closest<HTMLElement>('[data-help]')?.dataset.help); return; }
     if (action === 'first-run-manual') {
       dialog.close();
       await loadSettings(true);
@@ -1286,7 +1287,7 @@ function settingsMarkup(): string {
         <h2 tabindex="-1" id="set-advanced-title">Advanced</h2>
         <details class="advanced"${settingsAdvancedOpen ? ' open' : ''}><summary><span class="when-closed">Show advanced settings</span><span class="when-open">Hide advanced settings</span></summary>
           ${engine === 'chatterbox' ? '' : row('service-chatterbox', 'Your Chatterbox server address', 'Used for your own voice, and when you switch back to Chatterbox.', `${input('service-chatterbox', draft.chatterbox.url, 'url', 'placeholder="For example http://192.168.1.20:8095"')}${result('chatterbox')}`)}
-          ${row('service-whisperx', 'WhisperX server', 'Not used yet. Ready for when Script Glow listens for your lines.', `${input('service-whisperx', draft.whisperx.url)}${result('whisperx')}`)}
+          ${row('service-whisperx', 'WhisperX server', 'Not used yet. Continue when I stop speaking listens through the microphone on this computer and needs no server.', `${input('service-whisperx', draft.whisperx.url)}${result('whisperx')}`)}
           ${row('service-name', 'Name of this set-up', 'Shown when Script Glow starts, so you know which computer you are on.', input('service-name', draft.name, 'text'))}
           <label class="checkbox-label"><input type="checkbox" id="service-legacy" ${draft.chatterbox.legacyCache ? 'checked' : ''} ${off}> Reuse audio made by an older Script Glow</label>
           <p class="library-note">Addresses are saved in <code>data/connections.json</code>, which never holds a key, so it is safe to copy to another computer.</p>
@@ -1514,26 +1515,26 @@ function render() {
         : `<div class="notice error voices-offline" role="status"><span><strong>Voices are not connected.</strong> Script Glow cannot make audio until its voice service is running.</span><span class="notice-actions"><button type="button" data-action="reconnect">Check again</button><button type="button" data-action="help">How to fix</button></span></div>` : ''}
       ${parsed.scenes.length ? parsed.warnings.map(warning => `<div class="notice" role="status">${esc(warning)}</div>`).join('') : ''}
       <div class="workspace-grid">
-        <section class="script-panel" aria-label="Script scene"><div class="script-toolbar"><div><span class="live-dot"></span> ${String(parsed.scenes.indexOf(current!) + 1).padStart(2, '0')} <span class="muted">/ ${String(parsed.scenes.length).padStart(2, '0')}</span><span class="toolbar-divider"></span><span>THE SCRIPT</span></div><div class="reveal-controls"><label class="hide-control">${icon('eye', 16)} Hide <span class="wide-only">my lines</span> <input type="checkbox" id="hide-lines" ${prefs.hide ? 'checked' : ''} ${prefs.listen ? 'disabled' : ''}><span class="switch"></span></label><label class="hide-control" title="Hide the whole scene and rehearse by ear">Listen <span class="wide-only">only</span> <input type="checkbox" id="listen-only" ${prefs.listen ? 'checked' : ''}><span class="switch"></span></label></div></div>
+        <section class="script-panel" aria-label="Script scene"><div class="script-toolbar"><div><span class="live-dot"></span> ${String(parsed.scenes.indexOf(current!) + 1).padStart(2, '0')} <span class="muted">/ ${String(parsed.scenes.length).padStart(2, '0')}</span><span class="toolbar-divider"></span><span>THE SCRIPT</span></div><div class="reveal-controls"><label class="hide-control">${icon('eye', 16)} Hide <span class="wide-only">my lines</span> <input type="checkbox" id="hide-lines" aria-label="Hide my lines" ${prefs.hide ? 'checked' : ''} ${prefs.listen ? 'disabled' : ''}><span class="switch"></span></label><label class="hide-control" title="Hide the whole scene and rehearse by ear">Listen <span class="wide-only">only</span> <input type="checkbox" id="listen-only" aria-label="Listen only, hide the whole scene" ${prefs.listen ? 'checked' : ''}><span class="switch"></span></label></div></div>
           <div class="script-page ${result ? 'has-audio' : ''}" id="script-page"><div class="script-meta"><span>${esc(prefs.name.toUpperCase())}</span><span>${String(parsed.scenes.indexOf(current!) + 1).padStart(2, '0')}</span></div><h2>${esc(current?.title || 'Your next scene starts here')}</h2><div class="scene-rule"></div>
             ${sceneLinesMarkup()}
             <div class="end-scene"><span></span> END OF SCENE <span></span></div>
           </div><div class="script-footer"><span><span class="role-dot"></span> Your lines are marked</span><span>${dialogue.length} lines <span class="muted">·</span> ${mine} yours</span></div>
         </section>
         <aside class="settings-panel" aria-label="Rehearsal settings"><section class="settings-card"><div class="card-heading"><h2>Your part</h2><span class="mini-label">01</span></div><p>Step into your character.</p><label class="field-label" for="my-role">I’M PLAYING</label><select id="my-role" ${!parsed.characters.length || busy() ? 'disabled' : ''}>${parsed.characters.map(name => `<option value="${esc(name)}" ${prefs.role === name ? 'selected' : ''}>${esc(pretty(name))}</option>`).join('') || '<option>No characters yet</option>'}</select><div class="voice-note"><span class="avatar">${esc(prefs.role.slice(0, 1) || 'M')}</span><div><strong>${esc(prefs.cast[prefs.role] ? voiceLabel(prefs.cast[prefs.role]) : 'No voice connected')}</strong><small>${prefs.cast[prefs.role] === castingConfig.preferredActorVoice ? 'Your local cloned voice' : 'Assigned character voice'}</small></div>${prefs.cast[prefs.role] === castingConfig.preferredActorVoice ? icon('check', 16) : ''}</div></section>
-          <section class="settings-card practice-card"><div class="card-heading"><h2>Practice</h2>${icon('eye', 19)}</div>
-            <label class="checkbox-label"><input type="checkbox" id="first-letters" ${prefs.hint ? 'checked' : ''}> First letters of hidden lines</label>
-            <label class="checkbox-label"><input type="checkbox" id="wait-for-me" ${prefs.wait ? 'checked' : ''}> Wait for me on my line</label>
-            ${prefs.wait ? `<label class="checkbox-label"><input type="checkbox" id="auto-continue" ${prefs.autoContinue ? 'checked' : ''}> Continue when I stop speaking</label>` : ''}
-            ${prefs.wait && prefs.autoContinue ? `<label class="gap-label" for="hold-ms">How long I can pause <strong id="hold-value">${(prefs.holdMs / 1000).toFixed(1)}s</strong></label><input type="range" id="hold-ms" min="500" max="5000" step="500" value="${prefs.holdMs}"><div class="range-labels"><span>Natural</span><span>Take your time</span></div>` : ''}
-            <label class="checkbox-label"><input type="checkbox" id="build-up" ${prefs.build ? 'checked' : ''}> Build up line by line</label>
-            ${prefs.build ? `<div class="build-row"><label for="build-repeats">Times through each block</label><select id="build-repeats">${[1, 2, 3, 4, 5].map(times => `<option value="${times}" ${times === prefs.buildRepeats ? 'selected' : ''}>${times}×</option>`).join('')}</select><button type="button" class="text-link" data-action="build-restart">Start again</button></div>` : ''}
-            <div class="loop-marks"><span>Repeat</span><button type="button" data-action="mark-a" class="${prefs.loopA ? 'enabled' : ''}" aria-pressed="${!!prefs.loopA}" ${!result ? 'disabled' : ''}>A</button><button type="button" data-action="mark-b" class="${prefs.loopB ? 'enabled' : ''}" aria-pressed="${!!prefs.loopB}" ${!result ? 'disabled' : ''}>B</button><button type="button" data-action="clear-marks" ${!prefs.loopA && !prefs.loopB ? 'disabled' : ''}>Clear</button></div>
-            <p class="practice-hint">${practiceHint()}</p></section>
-          <section class="settings-card cast-card"><div class="card-heading"><h2>The cast</h2><span class="cast-count">${parsed.characters.length}</span></div><p>A voice for every character.</p><div class="cast-list"></div></section>
-          <section class="settings-card render-card"><div class="card-heading"><h2>Set the pace</h2>${icon('wave', 19)}</div><label class="gap-label" for="line-gap">Pause between lines <strong id="gap-value">${prefs.gap.toFixed(1)}s</strong></label><input type="range" id="line-gap" min="0" max="5" step="0.5" value="${prefs.gap}" ${busy() ? 'disabled' : ''}><div class="range-labels"><span>Natural</span><span>Take your time</span></div><label class="checkbox-label"><input type="checkbox" id="directions" ${prefs.directions ? 'checked' : ''} ${busy() ? 'disabled' : ''}> Read stage directions</label>
+          <section class="settings-card render-card"><div class="card-heading"><h2>Make the audio</h2>${icon('wave', 19)}</div><label class="gap-label" for="line-gap">Pause between lines <strong id="gap-value">${prefs.gap.toFixed(1)}s</strong></label><input type="range" id="line-gap" min="0" max="5" step="0.5" value="${prefs.gap}" ${busy() ? 'disabled' : ''}><div class="range-labels"><span>Natural</span><span>Take your time</span></div><label class="checkbox-label"><input type="checkbox" id="directions" ${prefs.directions ? 'checked' : ''} ${busy() ? 'disabled' : ''}> Read stage directions</label>
           <button class="button secondary render-button" data-action="render" ${busy() || !ttsOnline || !dialogue.length || !voices.length ? 'disabled' : ''}>${icon('wave', 17)} ${busy() ? 'Making audio…' : result ? 'Make audio again' : 'Make audio'} ${!busy() ? '<span>↗</span>' : ''}</button><p class="render-hint">Two tracks. Full cast + space for you.</p>
           <div id="job-progress" role="status" aria-live="polite">${job ? progressMarkup() : ''}</div></section>
+          <section class="settings-card practice-card"><div class="card-heading"><h2>Practice</h2>${icon('eye', 19)}</div>
+            ${prefs.hide || prefs.listen ? `<label class="checkbox-label"><input type="checkbox" id="first-letters" ${prefs.hint ? 'checked' : ''}> First letters of hidden lines</label>` : ''}
+            <label class="checkbox-label"><input type="checkbox" id="wait-for-me" ${prefs.wait ? 'checked' : ''}> Wait for me on my line</label>
+            ${prefs.wait ? `<label class="checkbox-label"><input type="checkbox" id="auto-continue" ${prefs.autoContinue ? 'checked' : ''}> Continue when I stop speaking</label>` : ''}
+            ${prefs.wait && prefs.autoContinue ? `<div class="build-row"><label for="hold-ms">How long I can pause</label><select id="hold-ms">${HOLDS.map(ms => `<option value="${ms}" ${ms === prefs.holdMs ? 'selected' : ''}>${(ms / 1000).toFixed(1)}s</option>`).join('')}</select></div>` : ''}
+            <label class="checkbox-label"><input type="checkbox" id="build-up" ${prefs.build ? 'checked' : ''}> Build up line by line</label>
+            ${prefs.build ? `<div class="build-row"><label for="build-repeats">Times through each block</label><select id="build-repeats">${[1, 2, 3, 4, 5].map(times => `<option value="${times}" ${times === prefs.buildRepeats ? 'selected' : ''}>${times}×</option>`).join('')}</select><button type="button" class="text-link" data-action="build-restart">Start again</button></div>` : ''}
+            <div class="loop-marks" role="group" aria-label="Repeat one exchange"><span>Repeat</span><button type="button" data-action="mark-a" aria-label="Mark the first line of the exchange" class="${prefs.loopA ? 'enabled' : ''}" aria-pressed="${!!prefs.loopA}" ${!result ? 'disabled' : ''}>A</button><button type="button" data-action="mark-b" aria-label="Mark the last line of the exchange" class="${prefs.loopB ? 'enabled' : ''}" aria-pressed="${!!prefs.loopB}" ${!result ? 'disabled' : ''}>B</button><button type="button" data-action="clear-marks" ${!prefs.loopA && !prefs.loopB ? 'disabled' : ''}>Clear</button></div>
+            <p class="practice-hint" role="status">${practiceHint()}</p></section>
+          <section class="settings-card cast-card"><div class="card-heading"><h2>The cast</h2><span class="cast-count">${parsed.characters.length}</span></div><p>A voice for every character.</p><div class="cast-list"></div></section>
           <div class="practice-tip"><span>✦</span><p><strong>Leave a little room for yourself.</strong> Practice mode silences your character, keeping every cue right on time.</p></div>
         </aside>
       </div>
@@ -1806,7 +1807,6 @@ app.addEventListener('input', event => {
   if (target.id === 'seek' && result) audio.currentTime = Number(target.value);
   if (target.id === 'reader-level') { const out = document.querySelector('output[for="reader-level"]'); if (out) out.textContent = `${Math.round(Number(target.value) * 100)}%`; }
   if (target.id === 'line-gap') { const label = document.querySelector('#gap-value'); if (label) label.textContent = `${Number(target.value).toFixed(1)}s`; }
-  if (target.id === 'hold-ms') { const label = document.querySelector('#hold-value'); if (label) label.textContent = `${(Number(target.value) / 1000).toFixed(1)}s`; }
 });
 app.addEventListener('change', async event => {
   const target = event.target as HTMLInputElement;
