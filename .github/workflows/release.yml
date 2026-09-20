@@ -82,16 +82,28 @@ jobs:
               exit 1
             fi
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
+            # The Azure values are optional as a set: sign with all of them, build unsigned with
+            # none of them, but refuse a half-set since that is a mistake, not a choice.
+            azure_names="AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_CERT_PROFILE AZURE_PUBLISHER_NAME"
             missing=""
-            [[ -z "$AZURE_TENANT_ID" ]] && missing="$missing AZURE_TENANT_ID"
-            [[ -z "$AZURE_CLIENT_ID" ]] && missing="$missing AZURE_CLIENT_ID"
-            [[ -z "$AZURE_CLIENT_SECRET" ]] && missing="$missing AZURE_CLIENT_SECRET"
-            [[ -z "$AZURE_SIGNING_ENDPOINT" ]] && missing="$missing AZURE_SIGNING_ENDPOINT"
-            [[ -z "$AZURE_SIGNING_ACCOUNT" ]] && missing="$missing AZURE_SIGNING_ACCOUNT"
-            [[ -z "$AZURE_CERT_PROFILE" ]] && missing="$missing AZURE_CERT_PROFILE"
-            [[ -z "$AZURE_PUBLISHER_NAME" ]] && missing="$missing AZURE_PUBLISHER_NAME"
-            if [[ -n "$missing" ]]; then
-              echo "Error: Missing Windows signing secrets:$missing" >&2
+            total=0
+            present=0
+            for name in $azure_names; do
+              total=$((total + 1))
+              if [[ -z "${!name}" ]]; then
+                missing="$missing $name"
+              else
+                present=$((present + 1))
+              fi
+            done
+            if [[ "$present" -eq "$total" ]]; then
+              echo "All Azure signing values present. This Windows build will be signed."
+            elif [[ "$present" -eq 0 ]]; then
+              line="This Windows build is not signed. Windows will show a SmartScreen warning."
+              echo "$line"
+              echo "$line" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "Error: Some Azure signing values are set but these are missing:$missing" >&2
               exit 1
             fi
           fi
@@ -141,3 +153,57 @@ jobs:
           AZURE_PUBLISHER_NAME: ${{ vars.AZURE_PUBLISHER_NAME }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx electron-builder --config desktop/builder.cjs --publish always
+      # Tells the person who publishes the draft which files are signed, since the Windows
+      # installer is unsigned until the Azure values exist. Runs only on the macOS leg: both
+      # matrix jobs finish close together, and two unlocked read-then-write edits of the same
+      # release body would race and could overwrite each other's note. The Mac line is always
+      # true here because the Apple values are required above; the Windows line is read from
+      # the Azure variables, which every job (not just the Windows one) can see.
+      - name: Note signing status in the release
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          REPO_NAME: ${{ github.repository }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_CERT_PROFILE: ${{ vars.AZURE_CERT_PROFILE }}
+          AZURE_PUBLISHER_NAME: ${{ vars.AZURE_PUBLISHER_NAME }}
+        run: |
+          azure_var_names="AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_CERT_PROFILE AZURE_PUBLISHER_NAME"
+          total=0
+          present=0
+          for name in $azure_var_names; do
+            total=$((total + 1))
+            [[ -n "${!name}" ]] && present=$((present + 1))
+          done
+          if [[ "$present" -eq "$total" ]]; then
+            windows_line="The Windows installer is signed."
+          else
+            windows_line="The Windows installer is not signed yet, so Windows shows a SmartScreen warning: choose More info, then Run anyway."
+          fi
+
+          marker="### Signing"
+          section="$marker"$'\n'"The Mac files are signed and notarized."$'\n'"$windows_line"
+
+          body="$(gh release view "$TAG_NAME" --repo "$REPO_NAME" --json body --jq .body)"
+          # A re-run writes the same marker again, so drop everything from the marker onward
+          # (the section this step wrote is always last) before appending the fresh section.
+          idx="$(grep -bo "$marker" <<<"$body" | head -1 | cut -d: -f1 || true)"
+          if [[ -n "$idx" ]]; then
+            prefix="${body:0:$idx}"
+          else
+            prefix="$body"
+          fi
+          prefix="$(printf '%s' "$prefix" | sed -e 's/[[:space:]]*$//')"
+
+          if [[ -z "$prefix" ]]; then
+            new_body="$section"
+          else
+            new_body="$prefix"$'\n\n'"$section"
+          fi
+
+          notes_file="$(mktemp)"
+          printf '%s\n' "$new_body" > "$notes_file"
+          gh release edit "$TAG_NAME" --repo "$REPO_NAME" --notes-file "$notes_file"

@@ -55,6 +55,8 @@ Download Script Glow for your computer from the [latest release](https://github.
 - Mac with an Intel processor: the `.dmg` whose name ends in `-x64.dmg`.
 - Windows: the `.exe`.
 
+The Mac files are signed. The Windows installer is not signed yet, so Windows shows a SmartScreen warning: choose More info, then Run anyway.
+
 Open it and follow the welcome screen. You do not need Node or a terminal.
 
 The app keeps your projects and settings in your user folder: `~/Library/Application Support/Script Glow` on a Mac, `%APPDATA%\Script Glow` on Windows. The key file for paid voice services stays in your user settings folder, the same one `npm start` uses: `~/.config/script-glow` on a Mac, `%APPDATA%\script-glow` on Windows.
