@@ -47,19 +47,21 @@ Browsers: current Chrome and Edge do everything. Firefox and Safari rehearse and
 
 ## Install
 
-### Download (Mac and Windows)
+### Download (Mac, Windows and Linux)
 
 Download Script Glow for your computer from the [latest release](https://github.com/Mariano215/script-glow/releases/latest):
 
 - Mac with Apple silicon (M1 or later): the `.dmg` whose name ends in `-arm64.dmg`.
 - Mac with an Intel processor: the `.dmg` whose name ends in `-x64.dmg`.
 - Windows: the `.exe`.
+- Linux on an Intel or AMD machine: the `.AppImage` whose name ends in `-x86_64.AppImage`.
+- Linux on an ARM machine: the `.AppImage` whose name ends in `-arm64.AppImage`.
 
-The Mac files are signed. The Windows installer is not signed yet, so Windows shows a SmartScreen warning: choose More info, then Run anyway.
+The Mac files are signed. The Windows installer is not signed yet, so Windows shows a SmartScreen warning: choose More info, then Run anyway. AppImages are never signed: run `chmod +x` on the file before you start it.
 
 Open it and follow the welcome screen. You do not need Node or a terminal.
 
-The app keeps your projects and settings in your user folder: `~/Library/Application Support/Script Glow` on a Mac, `%APPDATA%\Script Glow` on Windows. The key file for paid voice services stays in your user settings folder, the same one `npm start` uses: `~/.config/script-glow` on a Mac, `%APPDATA%\script-glow` on Windows.
+The app keeps your projects and settings in your user folder: `~/Library/Application Support/Script Glow` on a Mac, `%APPDATA%\Script Glow` on Windows, `~/.config/Script Glow` on Linux. The key file for paid voice services stays in your user settings folder, the same one `npm start` uses: `~/.config/script-glow` on a Mac and on Linux, `%APPDATA%\script-glow` on Windows.
 
 ### From source
 

@@ -129,7 +129,13 @@ module.exports = {
     ...(azure ? { azureSignOptions: { endpoint: process.env.AZURE_SIGNING_ENDPOINT, codeSigningAccountName: azure, certificateProfileName: process.env.AZURE_CERT_PROFILE, publisherName: process.env.AZURE_PUBLISHER_NAME } } : {}),
   },
   linux: {
-    files: ['!node_modules/onnxruntime-node/bin/napi-v3/!(linux){,/**}', '!node_modules/onnxruntime-node/bin/napi-v3/linux/!(${arch}){,/**}'],
+    // The last two are onnxruntime's GPU providers, 343 MB of them. They are not in the package:
+    // its install script downloads them on Linux x64, which package.json's "allowScripts" denies.
+    // Script Glow only ever asks for the CPU provider, so a tree installed before that policy, or
+    // past it, must still not turn into an AppImage that carries them.
+    files: ['!node_modules/onnxruntime-node/bin/napi-v3/!(linux){,/**}', '!node_modules/onnxruntime-node/bin/napi-v3/linux/!(${arch}){,/**}',
+      '!node_modules/onnxruntime-node/bin/napi-v3/linux/${arch}/libonnxruntime_providers_cuda.so',
+      '!node_modules/onnxruntime-node/bin/napi-v3/linux/${arch}/libonnxruntime_providers_tensorrt.so'],
     artifactName: 'Script-Glow-${version}-${arch}.${ext}',
     // AppImage over .deb: one file, no package manager, runs on any distribution. Unsigned, as
     // AppImage always is.
