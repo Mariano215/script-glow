@@ -10,7 +10,11 @@ const os = require('node:os');
 const { notShipped } = require('../scripts/not-shipped.cjs');
 
 const ROOT = path.join(__dirname, '..');
-const azure = process.env.AZURE_SIGNING_ACCOUNT;
+// Windows signing needs all four Azure values. With only some of them electron-builder would
+// call Trusted Signing with an empty certificate profile and fail the build, so a part-filled
+// set builds unsigned instead.
+const azureValues = ['AZURE_SIGNING_ENDPOINT', 'AZURE_SIGNING_ACCOUNT', 'AZURE_CERT_PROFILE', 'AZURE_PUBLISHER_NAME'].map(name => process.env[name]);
+const azure = azureValues.every(Boolean) ? process.env.AZURE_SIGNING_ACCOUNT : '';
 
 // node_modules/@napi-rs only ever holds the binding for the machine that ran `npm install`
 // (here, darwin-arm64). A Mac build for the other Intel/Apple Silicon arch needs its own

@@ -337,7 +337,9 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
         ? utilityProcess.fork(workerFile, [], { execArgv: ['--js-flags=--max-old-space-size=256'], stdio: 'ignore', serviceName: 'Script Glow PDF import' })
         : fork(workerFile, [], { execArgv: ['--max-old-space-size=256'], serialization: 'advanced', stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true });
       let received = false;
-      const timer = setTimeout(() => { worker.kill(); reject(fail('PDF extraction timed out. Try a smaller PDF or paste text.', 422)); }, 30000);
+      // 60s, not 30s: the first import on a cold machine also pays for the worker start, pdf.js
+      // and the native canvas binding. A 30s cap timed out on a slow CI runner with a tiny PDF.
+      const timer = setTimeout(() => { worker.kill(); reject(fail('PDF extraction timed out. Try a smaller PDF or paste text.', 422)); }, 60000);
       // A utility process keeps running after it answers, so it is stopped once the answer is in.
       worker.once('message', message => { received = true; clearTimeout(timer); if (utilityProcess) worker.kill(); message.error ? reject(fail(message.error, 422)) : resolve(message.text); });
       worker.once('error', () => { clearTimeout(timer); reject(fail('Could not extract this PDF. Try an unlocked text PDF or paste text.', 422)); });
