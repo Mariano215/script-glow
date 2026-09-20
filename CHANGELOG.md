@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.4.1 (2026-09-20)
+
+- **The Windows installer is signed.** Windows no longer shows the blue SmartScreen warning that told people the app was from an unknown publisher and asked them to choose **More info**, then **Run anyway**. The installer is signed as **Mariano Mattei** through Azure Artifact Signing. Nothing else changed in this release.
+
 ## 0.4.0 (2026-09-20)
 
 - **Continue when I stop speaking.** With **Wait for me on my line** on, Script Glow listens through your microphone and carries on once you stop, so a scene runs with no hand on the keyboard. **How long I can pause** sets how long a silence has to be, from half a second to five seconds. Space and **Continue** still work. Only the loudness of the room is read: nothing is recorded, saved or sent.
