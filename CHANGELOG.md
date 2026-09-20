@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.4.2 (2026-09-20)
+
+- **The welcome screen has a recommended choice again.** The built-in voices are held back until a licensing question about their word lists is settled, and with them hidden the welcome screen offered three choices that each need a graphics card, an API key or a terminal. **Use a paid voice service** is now marked as the one to pick, and says that the service charges for the audio it makes. The welcome screen also has an **i** button into the guide, which every other screen already had.
+- **Make the audio** moved above the practice controls, where it belongs: none of them do anything until the audio exists. The card is named for what it does rather than for one slider inside it.
+- **First letters of hidden lines** appears with **Hide my lines** and **Listen only**, the switches it depends on, instead of sitting on its own doing nothing.
+- **How long I can pause** is a small dropdown instead of a second slider. It sat one screen away from **Pause between lines** with the same two end labels, meaning something different.
+- Easier to use without a mouse or without sight: the **Hide my lines** and **Listen only** switches keep their names at phone width and are a proper size for a thumb, **A** and **B** say which end of the exchange they mark, and "Waiting for you" is announced when practice mode stops on your line.
+- The guide no longer sends you to a **Built-in voices** card that is not in this version, names the free voices before the paid ones, and says plainly that **Continue when I stop speaking** listens through the microphone on this computer and needs no server.
+- The README was a version behind: it said the Windows installer was unsigned, offered no Linux download, and never mentioned that listening opens the microphone.
+
 ## 0.4.1 (2026-09-20)
 
 - **The Windows installer is signed.** Windows no longer shows the blue SmartScreen warning that told people the app was from an unknown publisher and asked them to choose **More info**, then **Run anyway**. The installer is signed as **Mariano Mattei** through Azure Artifact Signing. Nothing else changed in this release.
