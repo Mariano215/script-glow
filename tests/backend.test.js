@@ -226,6 +226,10 @@ test('queue rejects a fifth outstanding render and permits replacement after can
     assert.equal((await post(base, '/api/render', input())).status, 429);
     await post(base, `/api/jobs/${ids[3]}/cancel`, {});
     const replacement = await post(base, '/api/render', input()); assert.equal(replacement.status, 202);
+    // The first job has to reach the mock before there is anything to release. Without this,
+    // release() throws, the body exits mid-render, and withServer removes the directory while
+    // the export handles are still open.
+    while (!release) await new Promise(resolve => setTimeout(resolve, 5));
     release();
     assert.equal((await completed(base, (await replacement.json()).jobId)).status, 'complete');
   }, async url => {

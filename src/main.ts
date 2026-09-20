@@ -1213,7 +1213,8 @@ function settingsMarkup(): string {
     const needsKey = !LOCAL_ENGINES.includes(value);
     const status = value === 'kokoro' ? kokoro.ready ? '<span class="pill is-ok">✓ Ready</span>' : kokoro.status === 'downloading' ? `<span class="pill">Downloading <span data-kokoro-percent>${kokoroPercent()}%</span></span>` : '<span class="pill is-warn">Not downloaded</span>'
       : needsKey ? keyFor(value) ? '<span class="pill is-ok">✓ Key saved</span>' : '<span class="pill is-warn">Needs a key</span>' : '<span class="pill is-ok">No key needed</span>';
-    return `<label class="engine-card ${engine === value ? 'is-selected' : ''}"><input type="radio" name="service-engine" id="service-engine-${value}" value="${value}" ${engine === value ? 'checked' : ''} ${off}><span class="engine-title">${title}<em>${tag}</em></span><span class="engine-text">${text}</span>${status}</label>`;
+    // A button is interactive content, so clicking it does not select the radio the label wraps.
+    return `<label class="engine-card ${engine === value ? 'is-selected' : ''}"><input type="radio" name="service-engine" id="service-engine-${value}" value="${value}" ${engine === value ? 'checked' : ''} ${off}><span class="engine-title">${title}<em>${tag}</em></span><span class="engine-text">${text}</span>${status}<button type="button" class="info-button" data-action="help" data-help="service-${value}" aria-haspopup="dialog" aria-label="How to set up ${esc(title)}, step by step" title="How to set up ${esc(title)}">i</button></label>`;
   };
   const provider = (item: (typeof settingsKeys)[number]) => {
     const about = PROVIDERS[item.provider];
@@ -1245,7 +1246,7 @@ function settingsMarkup(): string {
     <form class="settings-form" autocomplete="off">
       <p class="settings-status ${settingsError ? 'is-bad' : ''}" role="${settingsError && settingsNotice ? 'alert' : 'status'}">${esc(settingsSaving ? 'Saving…' : settingsNotice)}</p>
       <section class="settings-section" id="set-voices" aria-labelledby="set-voices-title">
-        <h2 tabindex="-1" id="set-voices-title">Who reads the other parts</h2>
+        <h2 tabindex="-1" id="set-voices-title">Who reads the other parts</h2> <button type="button" class="info-button" data-action="help" data-help="settings" aria-haspopup="dialog" aria-label="How voice engines work" title="How voice engines work">i</button>
         <p class="section-lead">The engine that speaks your scene partners. Parts you cast by hand are kept when you switch.</p>
         <fieldset class="engine-grid"><legend class="visually-hidden">Voice engine</legend>${engines.map(engineCard).join('')}</fieldset>
         ${engine === 'kokoro' ? kokoroAvailable ? kokoroPanel(off) : '<p class="callout is-warn" role="note">Built-in voices are not available in this version. Choose another engine.</p>' : engine === 'chatterbox' ? row('service-chatterbox', 'Your Chatterbox server address', 'For example http://192.168.1.20:8095. Script Glow only asks it for its voices, and sends it one only when you record your own.', `${input('service-chatterbox', draft.chatterbox.url, 'url', 'placeholder="For example http://192.168.1.20:8095"')}${result('chatterbox')}`)
@@ -1254,14 +1255,14 @@ function settingsMarkup(): string {
           ${row('service-voice-model', 'Model', 'The recommended one suits most scenes.', `<select id="service-voice-model" ${off}>${(spec?.models ?? []).map(name => `<option value="${name === spec?.model ? '' : esc(name)}" ${(draft.voice.model || spec?.model) === name ? 'selected' : ''}>${esc(name)}${name === spec?.model ? ' (recommended)' : ''}</option>`).join('')}</select>${result('voice', true)}`)}`}
       </section>
       <section class="settings-section" id="set-mine" aria-labelledby="set-mine-title">
-        <h2 tabindex="-1" id="set-mine-title">Your own voice</h2>
+        <h2 tabindex="-1" id="set-mine-title">Your own voice</h2> <button type="button" class="info-button" data-action="help" data-help="service-chatterbox" aria-haspopup="dialog" aria-label="How to use your own voice, step by step" title="How to use your own voice, step by step">i</button>
         <p class="section-lead">Hear your own lines in your voice when you listen to the full cast.${engine !== 'chatterbox' ? ' <strong>Only used with Chatterbox.</strong>' : ''}</p>
         <div class="voice-recorder">${recorder}${voiceNotice ? `<p class="callout ${voiceError ? 'is-warn' : ''}" role="status">${esc(voiceNotice)}</p>` : ''}</div>
         ${castingConfig.previewUrl ? `<div class="setting-row"><div class="setting-text"><span class="setting-label">Your current sample</span></div><div class="setting-control"><audio class="personal-sample" controls preload="none" src="${esc(castingConfig.previewUrl)}"></audio></div></div>` : ''}
         ${row('service-voice', 'Voice name', 'The name your voice has on the Chatterbox server.', input('service-voice', draft.casting.preferredActorVoice, 'text', 'placeholder="MyVoice"'))}
       </section>
       <section class="settings-section" id="set-names" aria-labelledby="set-names-title">
-        <h2 tabindex="-1" id="set-names-title">Guess voice types from names</h2>
+        <h2 tabindex="-1" id="set-names-title">Guess voice types from names</h2> <button type="button" class="info-button" data-action="help" data-help="service-ollama" aria-haspopup="dialog" aria-label="How to set up name guessing, step by step" title="How to set up name guessing, step by step">i</button>
         <p class="section-lead">Optional. When the script does not say whether a character is a man or a woman, an AI can guess from the name. Only the names are sent, never the script.</p>
         ${row('service-names-engine', 'Who guesses', namesEngine === 'ollama' ? 'Ollama runs on this computer and is free.' : `${esc(namesSpec?.label ?? namesEngine)} charges a very small amount per guess.`, `<select id="service-names-engine" ${off}>${[['ollama', 'Ollama (this computer, free)'], ['openai', 'OpenAI'], ['anthropic', 'Claude (Anthropic)'], ['gemini', 'Google Gemini'], ['xai', 'Grok (xAI)'], ['openrouter', 'OpenRouter']].map(([value, label]) => `<option value="${value}" ${namesEngine === value ? 'selected' : ''}>${label}</option>`).join('')}</select>`)}
         ${namesEngine === 'ollama'
@@ -1271,7 +1272,7 @@ function settingsMarkup(): string {
              ${row('service-names-model', 'Model', 'Leave empty for the recommended model, or type any model this service offers.', `${input('service-names-model', draft.names.model, 'text', `list="names-models" placeholder="${esc(namesSpec?.model ?? '')} (recommended)"`)}<datalist id="names-models">${(namesSpec?.models ?? []).map(name => `<option value="${esc(name)}"></option>`).join('')}</datalist>${result('names', true)}`)}`}
       </section>
       <section class="settings-section" id="set-keys" aria-labelledby="set-keys-title">
-        <h2 tabindex="-1" id="set-keys-title">Keys for paid services</h2>
+        <h2 tabindex="-1" id="set-keys-title">Keys for paid services</h2> <button type="button" class="info-button" data-action="help" data-help="keys" aria-haspopup="dialog" aria-label="What a key is and how to add one" title="What a key is and how to add one">i</button>
         <p class="section-lead">For paid services, and for a voice server on another computer. Each key is saved when you press Save key, kept in your private user folder, and never shown again.</p>
         ${(() => {
           // Keys you have, or need for what you chose, come first; the rest wait behind one line.
@@ -1449,6 +1450,10 @@ function applyScreen(focus = false) {
   if (edit) edit.hidden = screen !== 'rehearsal';
   const eyebrow = document.querySelector<HTMLElement>('.page-heading .eyebrow');
   if (eyebrow) eyebrow.hidden = screen === 'settings';
+  // The help section ids are deliberately the same words as the screen names, so the ⓘ beside the
+  // heading opens the guide at the screen the reader is looking at.
+  const screenHelp = document.querySelector<HTMLElement>('.page-heading .info-button');
+  if (screenHelp) screenHelp.dataset.help = screen;
   const heading = document.querySelector<HTMLElement>('#screen-title')!;
   const [title, blurb] = SCREEN_COPY[screen];
   heading.textContent = title;
@@ -1502,7 +1507,7 @@ function render() {
     </aside>
     <main class="main">
       <header class="topbar"><nav class="studio-menu" aria-label="Studio screens"><a href="#rehearsal" data-screen="rehearsal">Rehearsal</a><a href="#cast" data-screen="cast">Cast <span>${parsed.characters.length}</span></a><a href="#selftape" data-screen="selftape">Self-tape${takes.length ? ` <span>${takes.length}</span>` : ''}</a><a href="#projects" data-screen="projects">Projects</a><a href="#settings" data-screen="settings">Settings</a></nav><div class="breadcrumb">${esc(prefs.name)}</div><p id="project-save-status" class="save-status" role="status" aria-live="polite"></p><button type="button" class="help-button" data-action="help" aria-haspopup="dialog">? Help</button><div class="private-pill"><span></span> ${hostedEngine() ? `HOSTED VOICES · ${esc(engineName().toUpperCase())}` : 'PRIVATE STUDIO'}</div></header>
-      <section class="page-heading"><div><p class="eyebrow">A LITTLE PRACTICE. A BETTER PERFORMANCE.</p><h1 id="screen-title" tabindex="-1">Make the scene yours<span>.</span></h1><p>Find your rhythm. Learn your lines. Be ready when it counts.</p></div><button class="button secondary" data-action="edit">${icon('edit', 17)} Edit script</button></section>
+      <section class="page-heading"><div><p class="eyebrow">A LITTLE PRACTICE. A BETTER PERFORMANCE.</p><h1 id="screen-title" tabindex="-1">Make the scene yours<span>.</span></h1><p>Find your rhythm. Learn your lines. Be ready when it counts.</p></div><div class="page-heading-actions"><button type="button" class="info-button is-page" data-action="help" data-help="quick-start" aria-haspopup="dialog" aria-label="Step by step help for this screen" title="Step by step help for this screen">i</button><button class="button secondary" data-action="edit">${icon('edit', 17)} Edit script</button></div></section>
       ${notice ? `<div class="notice ${noticeError ? 'error' : ''}" role="${noticeError ? 'alert' : 'status'}"><span>${esc(notice)}</span><button data-action="dismiss" aria-label="Dismiss notification">${icon('close', 16)}</button></div>` : ''}
       ${connectionChecked && !ttsOnline ? hostedEngine()
         ? `<div class="notice voices-offline" role="status"><span><strong>One step left:</strong> add your ${esc(engineName())} key, and the cast can start reading.</span><span class="notice-actions"><a class="button primary small" href="#settings">Add the key in Settings</a></span></div>`
@@ -1687,7 +1692,7 @@ app.addEventListener('click', async event => {
   if (action === 'play' || action === 'mode-full' || action === 'mode-practice') stopVoicePreview();
   if (action === 'import') { fileInput.click(); return; }
   if (action === 'edit') { editScript(); return; }
-  if (action === 'help') { openHelp(); return; }
+  if (action === 'help') { openHelp(target.dataset.help); return; }
   if (action === 'render') { void renderScene(); return; }
   if (action === 'reconnect') { await connect(); flash(ttsOnline ? 'Voices connected.' : 'Still cannot reach the voice service. Open Help, then Troubleshooting.', !ttsOnline); return; }
   if (action === 'dismiss') notice = '';
