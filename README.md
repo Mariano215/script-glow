@@ -29,7 +29,7 @@ By default everything runs on your own machine, and scripts and audio are not se
 - **Voice engines**: the included Chatterbox server (free and private, best with an NVIDIA GPU), or ElevenLabs, OpenAI, or Google Gemini as paid, hosted alternatives. Record your own voice for your role with Chatterbox.
 - **Project library**: many projects on disk, listed with edit dates, rename and delete, autosave, `.sgbackup` export and restore, and render reuse when inputs match.
 - **Downloads**: full-cast and practice WAV files.
-- **In-app guide**: press **? Help** in the top bar.
+- **In-app guide**: press **? Help** in the top bar, or the small **i** beside any screen heading to open the guide at that section. **Ask for help on GitHub** opens an issue with your version and browser already filled in.
 
 ## Requirements
 
@@ -57,7 +57,7 @@ Download Script Glow for your computer from the [latest release](https://github.
 - Linux on an Intel or AMD machine: the `.AppImage` whose name ends in `-x86_64.AppImage`.
 - Linux on an ARM machine: the `.AppImage` whose name ends in `-arm64.AppImage`.
 
-The Mac files are signed. The Windows installer is not signed yet, so Windows shows a SmartScreen warning: choose More info, then Run anyway. AppImages are never signed: run `chmod +x` on the file before you start it.
+The Mac files are signed and notarized. The Windows installer is signed as Mariano Mattei, so Windows starts it without a SmartScreen warning. AppImages are never signed: run `chmod +x` on the file before you start it.
 
 Open it and follow the welcome screen. You do not need Node or a terminal.
 
@@ -169,7 +169,7 @@ Open http://127.0.0.1:3001.
 2. Click **Edit script** to check the parsed scenes and characters.
 3. Open **Cast**. Click **I'm playing this role** on your character. Pick and preview a voice for every other character. If a name comes out wrong, type how it sounds in **Say it like**, for example `shi-VAWN` for Siobhan. Capitals mark the stressed part, and it works with every voice engine.
 4. Open **Rehearsal**. Choose **Full script** or one scene and press **Play**. The first render is slower while the voice engine loads its model.
-5. Listen in **Full cast**, then switch to **Practice** and speak your lines in the gaps. Hide my lines, Listen only, first letters, wait for me, build up line by line, and Repeat A/B all help you learn a scene.
+5. Listen in **Full cast**, then switch to **Practice** and speak your lines in the gaps. Hide my lines, Listen only, first letters, wait for me, continue when I stop speaking, build up line by line, and Repeat A/B all help you learn a scene.
 6. Download either WAV to rehearse away from the app, or open **Self-tape** to record yourself against the cast, trim the take, and make an MP4 for casting sites.
 
 Changes to the script, cast, your role, pause length, or stage directions need new audio. Speed and highlight colors do not. Scene labels show **Audio ready** or **Audio not made yet**.
@@ -204,7 +204,7 @@ Changes to the script, cast, your role, pause length, or stage directions need n
 
 ## Security
 
-Script Glow is a single-user local app with no login. The server listens on `127.0.0.1` only, checks the `Host` and `Origin` headers, refuses to be shown inside another page, and accepts changes from the browser only with a secret made new at each launch. Do not expose it to a network. API keys for hosted services are kept in your user settings folder (`~/.config/script-glow/secrets.json`, or `%APPDATA%\script-glow\secrets.json` on Windows; set `SCRIPT_GLOW_SECRETS` to move it), with owner-only access, never in `data/connections.json`, never in a project backup, and never sent back to the browser once saved. If you choose a hosted voice engine (ElevenLabs, OpenAI, or Google Gemini), the lines of the scene you voice are sent to that company each time you make new audio; lines already made are cached and never sent again. If you choose a hosted engine for name guessing (OpenAI, Claude, Gemini, Grok, or OpenRouter), only the character names are sent. Your script file, your settings, and your self-tapes are never sent to either kind of service. With Chatterbox and Ollama on this computer, nothing leaves the machine. When they run on another computer, the lines, names and your voice recording go to that computer; protect a remote voice server with `VOICE_TOKEN`. On Windows, file permissions come from the folder: the key file is private in your user folder, while `data/` has the permissions of the folder you cloned into. See [SECURITY.md](SECURITY.md). Imported scripts and backups are treated as untrusted input: size limits apply, text is escaped before rendering, and PDFs are parsed in a separate process with memory and time limits.
+Script Glow is a single-user local app with no login. The server listens on `127.0.0.1` only, checks the `Host` and `Origin` headers, refuses to be shown inside another page, and accepts changes from the browser only with a secret made new at each launch. Do not expose it to a network. API keys for hosted services are kept in your user settings folder (`~/.config/script-glow/secrets.json`, or `%APPDATA%\script-glow\secrets.json` on Windows; set `SCRIPT_GLOW_SECRETS` to move it), with owner-only access, never in `data/connections.json`, never in a project backup, and never sent back to the browser once saved. **Continue when I stop speaking** opens the microphone while practice mode waits on your line, and reads only how loud the room is. No recording is made, nothing is written to disk and nothing leaves the browser. Switch it off on the Practice card and the microphone is released. If you choose a hosted voice engine (ElevenLabs, OpenAI, or Google Gemini), the lines of the scene you voice are sent to that company each time you make new audio; lines already made are cached and never sent again. If you choose a hosted engine for name guessing (OpenAI, Claude, Gemini, Grok, or OpenRouter), only the character names are sent. Your script file, your settings, and your self-tapes are never sent to either kind of service. With Chatterbox and Ollama on this computer, nothing leaves the machine. When they run on another computer, the lines, names and your voice recording go to that computer; protect a remote voice server with `VOICE_TOKEN`. On Windows, file permissions come from the folder: the key file is private in your user folder, while `data/` has the permissions of the folder you cloned into. See [SECURITY.md](SECURITY.md). Imported scripts and backups are treated as untrusted input: size limits apply, text is escaped before rendering, and PDFs are parsed in a separate process with memory and time limits.
 
 ## HTTP API
 
@@ -262,7 +262,7 @@ node verification/browser.mjs              # also: ai-casting, casting-playback,
                                            # highlighting-scenes, numbered-scenes, own-voice,
                                            # practice-controls, project-library, render-guard,
                                            # self-tape, settings, studio-workspace, voice-library,
-                                           # builtin-voices, say-it-like
+                                           # builtin-voices, say-it-like, listening
 ```
 
 Checks against a running app on port 3001 (`npm start` first; GPU checks need the voice server and should run one at a time):

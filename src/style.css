@@ -70,7 +70,7 @@ body.is-taping .player{opacity:.55}
   .icon-button, .play-button, .loop-marks button, .take-actions button, .take-actions a, .notice button, .job-label button { min-width: 44px; min-height: 44px; }
   .play-button:not(.is-waiting) { width: 44px; height: 44px; }
   .text-link, .settings-nav button, .key-actions .text-link { min-height: 44px; display: inline-flex; align-items: center; }
-  .checkbox-label { min-height: 44px; }
+  .checkbox-label, .hide-control { min-height: 44px; }
   .checkbox-label input, .engine-card input { width: 22px; height: 22px; }
   .playback-actions select, .build-row select { min-height: 44px; }
   input[type=range] { height: 24px; }
