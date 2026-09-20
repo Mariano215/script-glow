@@ -1,6 +1,6 @@
 # Listening mode design
 
-Date: 2026-09-20. Status: draft, waiting for review.
+Date: 2026-09-20. Status: phases one and two built and released, in 0.4.0 and 0.5.0. Phase three not started.
 
 ## Goal
 
@@ -150,6 +150,8 @@ Browser, `verification/listening.mjs` (new): Chrome with `--use-fake-device-for-
 
 ## Phases
 
-1. Silence ends the wait, settings switch, hold knob, unit tests, browser check. No network, no key, no server route. This is the feature for most actors.
-2. The transcript layer against WhisperX: the new route, `lineMatch`, and the marks in the script.
-3. A paid streaming service, if phase two shows the accuracy layer is worth paying for.
+1. **Built, released in 0.4.0.** Silence ends the wait, settings switch, hold knob, unit tests, browser check. No network, no key, no server route. This is the feature for most actors.
+2. **Built, released in 0.5.0.** The transcript layer against WhisperX: `POST /api/listen/transcribe`, `lineMatch`, and the marks in the script. Two departures from this spec: the settings live in `prefs` beside the other practice controls rather than in the connection profile, and the pause length is a dropdown rather than a slider, because a second slider carried the same end labels as **Pause between lines**.
+3. Not started. A paid streaming service, if phase two shows the accuracy layer is worth paying for.
+
+Still unproven after both phases: none of it has heard a human voice. The floor, the 120 ms speech guard and the 0.5 s default hold were tested against a synthetic tone through Chrome's fake device.
