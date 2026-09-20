@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-09-20)
 
 - **Built-in voices.** Kokoro-82M runs on this computer's CPU inside Script Glow: no voice server, no GPU, no key, no cost. Choose **Free voices on this computer** on the welcome screen, or **Built-in voices** in Settings. The voice files (about 360 MB) download once, resume after an interruption, and are checked before use. 28 English voices, US and UK. Hidden until the Misaki word-list provenance question is settled (hexgrad/misaki#107); set `SCRIPT_GLOW_EXPERIMENTAL_KOKORO=1` to turn them on before then.
 - **Say it like** on each character card: type how a name sounds, for example `shi-VAWN`, and every voice engine says it that way.
