@@ -347,3 +347,38 @@ test('monologues longer than one TTS request render as sentence chunks under a s
     assert.ok(practice.subarray(44, 44 + chunks.length * pcm.length).every(byte => byte === 0));
   }, mock);
 });
+
+test('a spoken line is transcribed by the server the actor named, and a bad clip never leaves the app', async () => {
+  let sent = null;
+  await withServer(async base => {
+    const clip = encodeWav(Buffer.alloc(4800)).toString('base64');
+    const good = await post(base, '/api/listen/transcribe', { data: clip });
+    assert.equal(good.status, 200);
+    assert.equal((await good.json()).text, 'SPEAKER_00: Then say the rest of it.');
+    assert.ok(sent.endsWith('/v1/audio/transcriptions'), 'It goes to the address in the profile');
+
+    sent = null;
+    for (const body of [{}, { data: 'not base64!' }, { data: Buffer.from('this is not a wav').toString('base64') }]) {
+      assert.equal((await post(base, '/api/listen/transcribe', body)).status, 400, `Refused: ${JSON.stringify(body)}`);
+    }
+    assert.equal(sent, null, 'Nothing that is not a WAV clip is ever sent on');
+  }, async url => {
+    if (url.endsWith('/v1/voices')) return Buffer.from(JSON.stringify({ voices: ['MyVoice'] }));
+    if (url.endsWith('/health')) return Buffer.from('{"status":"ok"}');
+    if (url.endsWith('/v1/audio/transcriptions')) { sent = url; return Buffer.from(JSON.stringify({ text: 'SPEAKER_00: Then say the rest of it.' })); }
+    return wav;
+  });
+});
+
+test('a transcription server that is down is reported in words an actor can act on', async () => {
+  await withServer(async base => {
+    const answer = await post(base, '/api/listen/transcribe', { data: encodeWav(Buffer.alloc(4800)).toString('base64') });
+    assert.equal(answer.status, 502);
+    assert.match((await answer.json()).error, /Check its address in Settings|switch Check what I said off/);
+  }, async url => {
+    if (url.endsWith('/v1/voices')) return Buffer.from(JSON.stringify({ voices: ['MyVoice'] }));
+    if (url.endsWith('/health')) return Buffer.from('{"status":"ok"}');
+    if (url.endsWith('/v1/audio/transcriptions')) throw new Error('connect ECONNREFUSED');
+    return wav;
+  });
+});

@@ -27,6 +27,8 @@ Your script file, your settings and your self-tapes are never sent to any of the
 
 **Continue when I stop speaking** opens the microphone while practice mode waits on your line, and reads only how loud the room is. No recording is made, nothing is written to disk and nothing leaves the browser. The microphone is closed again when you switch the setting off.
 
+**Check what I said** is off unless you switch it on. With it on, each line you speak is recorded while practice mode waits, and the recording is sent to the WhisperX address in your profile, which is a machine you chose. The clip is held in memory on the way through, is never written to disk, and is dropped once the text comes back. The text is compared with the script in your browser and the result is kept only until the scene is reloaded.
+
 ## The voice server
 
 The voice server in `voice-server/` listens on `127.0.0.1` and answers only requests addressed to this computer, so a web page cannot reach it by pointing its own domain at `127.0.0.1`.

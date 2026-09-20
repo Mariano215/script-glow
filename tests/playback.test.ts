@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cueRate, cueAt, stepCue, shouldWait, firstLetters, loopRange, buildTargets, buildEnd, buildNext, listenStart, listenStep } from '../src/playback.ts';
+import { cueRate, cueAt, stepCue, shouldWait, firstLetters, loopRange, buildTargets, buildEnd, buildNext, listenStart, listenStep, lineMatch } from '../src/playback.ts';
 
 const cues = [
   { lineId: 'a', start: 0, end: 2, character: 'DAVID' },
@@ -115,4 +115,17 @@ test('a spike is not speech, and a loud room raises its own floor', () => {
 test('the wait is only ended once', () => {
   const ended = run(500, [...room, ...steady(50, 0.2), ...steady(30, 0.003)]);
   assert.equal(listenStep(ended, 0.9, 10_000, 500).phase, 'done', 'A door slamming after the line does not reopen it');
+});
+
+test('what the actor said is matched against the line, not spelled against it', () => {
+  const line = 'Then say the rest of it.';
+  assert.equal(lineMatch('Then say the rest of it.', line).verdict, 'said');
+  assert.equal(lineMatch('SPEAKER_00: then say the rest of it', line).verdict, 'said', 'The server labels the speaker and drops the full stop');
+  assert.equal(lineMatch('Then, say the rest of it!', line).verdict, 'said', 'Punctuation and case are not performance');
+  assert.equal(lineMatch('Then say the rest', line).verdict, 'partial', 'Half a line is a dried line, not a wrong one');
+  assert.equal(lineMatch('I wanted to wait', line).verdict, 'different', 'A different line of the scene is different');
+  assert.equal(lineMatch('', line).verdict, 'different', 'Silence transcribed as nothing is not the line');
+  assert.equal(lineMatch('Then say the rest of it, please, I am asking you', line).verdict, 'said', 'An actor who adds words still said the line');
+  assert.equal(lineMatch('anything', '').verdict, 'said', 'An empty expected line cannot be got wrong');
+  assert.ok(lineMatch('Then say the rest of it.', line).score > lineMatch('Then say the rest', line).score);
 });

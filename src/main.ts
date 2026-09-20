@@ -8,7 +8,7 @@ import './projects.css';
 import './studio.css';
 import { highlightDefaults, readHighlights, highlightedCharacter, lineHidden, safeColor, type HighlightPreferences } from './highlights';
 import { parseScript, sayItLike, sceneIncludes, spokenLines, SAMPLE, type Scene, type ScriptLine } from './parser';
-import { buildEnd, buildNext, buildTargets, cueAt, cueRate, firstLetters, loopRange, shouldWait, stepCue, type Cue } from './playback';
+import { buildEnd, buildNext, buildTargets, cueAt, cueRate, firstLetters, lineMatch, loopRange, shouldWait, stepCue, type Cue, type LineVerdict } from './playback';
 import { releaseMicrophone, startListening, stopListening } from './listening';
 import { browserMp4, browserMp4Type, castingFileName, castingFit, countBeep, monoWav, setReaderLevel, mixerState, openRecorder, resumeMixer, takeClock, takeContainer, takeLabel, takeNeedsConverting, type Take, type TakeRecorder } from './selftape';
 import { inferCharacters, assignCast, resolvedGender, voiceGenders, voiceOwners, validGuesses, withNameGuesses, type NameGuesses, type GenderChoice } from './casting';
@@ -18,11 +18,11 @@ import { parseServerHost } from './server-address';
 
 interface RenderResult { fullUrl: string; practiceUrl: string; duration: number; cues: Cue[] }
 interface Job { id: string; status: 'queued' | 'running' | 'complete' | 'error'; completed: number; total: number; error?: string; result?: RenderResult }
-interface Preferences extends HighlightPreferences { source: string; name: string; role: string; cast: Record<string, string>; sayAs: Record<string, string>; guesses: NameGuesses; genders: Record<string, GenderChoice>; manualVoices: Record<string, boolean>; sceneId: string; gap: number; directions: boolean; hide: boolean; listen: boolean; hint: boolean; wait: boolean; autoContinue: boolean; holdMs: number; build: boolean; buildRepeats: number; tapeW: number; tapeH: number; loopA: string; loopB: string; tapeOverlay: boolean; tapeX: number; tapeY: number; follow: boolean; loop: boolean; rate: number; mode: 'full' | 'practice' ; readerLevel: number }
+interface Preferences extends HighlightPreferences { source: string; name: string; role: string; cast: Record<string, string>; sayAs: Record<string, string>; guesses: NameGuesses; genders: Record<string, GenderChoice>; manualVoices: Record<string, boolean>; sceneId: string; gap: number; directions: boolean; hide: boolean; listen: boolean; hint: boolean; wait: boolean; autoContinue: boolean; holdMs: number; checkLines: boolean; build: boolean; buildRepeats: number; tapeW: number; tapeH: number; loopA: string; loopB: string; tapeOverlay: boolean; tapeX: number; tapeY: number; follow: boolean; loop: boolean; rate: number; mode: 'full' | 'practice' ; readerLevel: number }
 // How long the actor may pause before listening takes the line as finished. Half second steps,
 // the same shape as the pause between lines, because it is the same kind of choice.
 const HOLDS = [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000];
-const defaults: Preferences = { ...highlightDefaults, source: SAMPLE, name: 'The Last Light', role: 'MARCUS', cast: {}, sayAs: {}, guesses: {}, genders: {}, manualVoices: {}, sceneId: 'scene-1', gap: 1, directions: false, hide: false, listen: false, hint: false, wait: false, autoContinue: false, holdMs: 500, build: false, buildRepeats: 2, loopA: '', loopB: '', tapeOverlay: false, readerLevel: 1, tapeX: 50, tapeY: 78, tapeW: 0, tapeH: 0, follow: true, loop: false, rate: 1, mode: 'full' };
+const defaults: Preferences = { ...highlightDefaults, source: SAMPLE, name: 'The Last Light', role: 'MARCUS', cast: {}, sayAs: {}, guesses: {}, genders: {}, manualVoices: {}, sceneId: 'scene-1', gap: 1, directions: false, hide: false, listen: false, hint: false, wait: false, autoContinue: false, holdMs: 500, checkLines: false, build: false, buildRepeats: 2, loopA: '', loopB: '', tapeOverlay: false, readerLevel: 1, tapeX: 50, tapeY: 78, tapeW: 0, tapeH: 0, follow: true, loop: false, rate: 1, mode: 'full' };
 // Defined before restored() runs: used any earlier, they throw, and the catch in restored() would
 // quietly replace a saved draft with the sample script.
 // The script can sit over the camera so the actor's eyeline stays near the lens. Its place is
@@ -40,7 +40,7 @@ function restored(): Preferences {
       genders: record(saved.genders, item => ['auto', 'male', 'female', 'unknown'].includes(item as string)) as Record<string, GenderChoice>,
       manualVoices: record(saved.manualVoices, item => typeof item === 'boolean') as Record<string, boolean>,
       sayAs: record(saved.sayAs, item => typeof item === 'string') as Record<string, string>,
-      directions: saved.directions === true, follow: saved.follow !== false, loop: saved.loop === true, source: typeof saved.source === 'string' ? saved.source : SAMPLE, cast: record(saved.cast, item => typeof item === 'string') as Record<string, string>, hide: saved.hide === true, listen: saved.listen === true, hint: saved.hint === true, wait: saved.wait === true, autoContinue: saved.autoContinue === true, holdMs: HOLDS.includes(Number(saved.holdMs)) ? Number(saved.holdMs) : 500, build: saved.build === true, buildRepeats: [1, 2, 3, 4, 5].includes(Number(saved.buildRepeats)) ? Number(saved.buildRepeats) : 2, loopA: typeof saved.loopA === 'string' ? saved.loopA : '', loopB: typeof saved.loopB === 'string' ? saved.loopB : '', tapeOverlay: saved.tapeOverlay === true, readerLevel: typeof saved.readerLevel === 'number' && Number.isFinite(saved.readerLevel) ? Math.min(1.5, Math.max(0, saved.readerLevel)) : 1, tapeX: tapePercent(saved.tapeX, 50), tapeY: tapePercent(saved.tapeY, 78), tapeW: tapeSize(saved.tapeW), tapeH: tapeSize(saved.tapeH), gap: Math.min(5, Math.max(0, Number(saved.gap ?? 1))), rate: [0.75, 1, 1.25, 1.5].includes(Number(saved.rate)) ? Number(saved.rate) : 1 };
+      directions: saved.directions === true, follow: saved.follow !== false, loop: saved.loop === true, source: typeof saved.source === 'string' ? saved.source : SAMPLE, cast: record(saved.cast, item => typeof item === 'string') as Record<string, string>, hide: saved.hide === true, listen: saved.listen === true, hint: saved.hint === true, wait: saved.wait === true, autoContinue: saved.autoContinue === true, holdMs: HOLDS.includes(Number(saved.holdMs)) ? Number(saved.holdMs) : 500, checkLines: saved.checkLines === true, build: saved.build === true, buildRepeats: [1, 2, 3, 4, 5].includes(Number(saved.buildRepeats)) ? Number(saved.buildRepeats) : 2, loopA: typeof saved.loopA === 'string' ? saved.loopA : '', loopB: typeof saved.loopB === 'string' ? saved.loopB : '', tapeOverlay: saved.tapeOverlay === true, readerLevel: typeof saved.readerLevel === 'number' && Number.isFinite(saved.readerLevel) ? Math.min(1.5, Math.max(0, saved.readerLevel)) : 1, tapeX: tapePercent(saved.tapeX, 50), tapeY: tapePercent(saved.tapeY, 78), tapeW: tapeSize(saved.tapeW), tapeH: tapeSize(saved.tapeH), gap: Math.min(5, Math.max(0, Number(saved.gap ?? 1))), rate: [0.75, 1, 1.25, 1.5].includes(Number(saved.rate)) ? Number(saved.rate) : 1 };
   } catch { return { ...defaults }; }
 }
 let prefs = restored();
@@ -227,6 +227,9 @@ const applyRate = () => { audio.playbackRate = cueRate(prefs, currentCue()?.char
 // The app pauses on the actor's silent turn and waits to be released; resuming skips that span.
 let waitingFor = '';
 let resumedLine = '';
+// What the actor said, line by line, for this run of the scene. Never saved: a rehearsal is
+// practice, not a record of how well anyone did.
+const lineChecks = new Map<string, LineVerdict>();
 function releaseWait() {
   stopListening();
   const cue = result?.cues.find(item => item.lineId === waitingFor);
@@ -236,9 +239,27 @@ function releaseWait() {
 }
 // The microphone is opened on the first wait and read only while the app is waiting. A refusal
 // or a busy device turns listening off and says so, because Space and Continue still work.
+const CHECK_WORDS: Record<LineVerdict, string> = { said: 'Said', partial: 'Half said', different: 'Not this line' };
+async function checkLine(lineId: string, wav: Blob) {
+  const line = scene()?.lines.find(item => item.id === lineId);
+  if (!line) return;
+  try {
+    const bytes = new Uint8Array(await wav.arrayBuffer());
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    const answer = await api<{ text: string }>('/api/listen/transcribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: btoa(binary) }) });
+    lineChecks.set(lineId, lineMatch(answer.text, line.text).verdict);
+    render();
+  } catch (error) {
+    // One failure turns the check off for the run rather than saying it again on every line.
+    prefs.checkLines = false; persist();
+    flash(error instanceof Error ? error.message : 'Your lines could not be checked, so that is switched off.', true);
+    render();
+  }
+}
 async function beginListening(lineId: string) {
   try {
-    await startListening(prefs.holdMs, () => { if (waitingFor !== lineId) return; releaseWait(); render(); });
+    await startListening(prefs.holdMs, () => { if (waitingFor !== lineId) return; releaseWait(); render(); }, prefs.checkLines ? wav => void checkLine(lineId, wav) : undefined);
   } catch (error) {
     prefs.autoContinue = false; persist();
     flash(error instanceof Error ? error.message : 'The microphone could not be used, so listening is off.', true);
@@ -505,6 +526,7 @@ function invalidate(restoreCompleted = false) {
   audioLoadVersion++;
   if (busy() && job) void api(`/api/jobs/${encodeURIComponent(job.id)}/cancel`, { method: 'POST' }).catch(() => {});
   stopListening();
+  lineChecks.clear();
   job = null; result = null; loadedMode = null; legacyAudio = false; audio.pause(); audio.removeAttribute('src'); audio.load(); activeLine = ''; revealed.clear(); waitingFor = ''; resumedLine = '';
   if (cacheSource !== prefs.source) { if (!projectId) completedScenes.clear(); cacheSource = prefs.source; persistRenders(); }
   const current = scene();
@@ -1172,7 +1194,7 @@ function placeParentheticals(root: ParentNode, lines: ScriptLine[]) {
 }
 function sceneLinesMarkup(): string {
   const current = scene();
-  return current?.lines.map(line => line.kind === 'direction' ? `<p class="direction ${line.id === activeLine ? 'active' : ''} ${prefs.listen ? 'listening' : ''}" data-line="${esc(line.id)}">${esc(line.text)}</p>` : `<article class="dialogue ${prefs.listen && !revealed.has(line.id) ? 'listening' : ''} ${line.character === prefs.role ? 'my-line' : ''} ${line.character === highlightedCharacter(prefs, prefs.role) ? 'character-highlight' : ''} ${line.id === activeLine ? 'active' : ''}" data-line="${esc(line.id)}"><div class="character-label">${esc(line.character)} ${line.character === prefs.role ? '<span>YOU</span>' : ''}</div>${lineHidden(prefs, line.character === prefs.role, revealed.has(line.id)) ? `<button class="hidden-line" data-action="reveal" data-id="${esc(line.id)}" aria-label="Reveal ${line.character === prefs.role ? 'your line' : 'this line'}">${prefs.hint ? `<span class="hint-text">${esc(firstLetters(line.text))}</span>` : '<span class="hidden-stroke"></span><span class="hidden-stroke short"></span>'}<small>Click to reveal ${line.character === prefs.role ? 'your line' : 'this line'}</small></button>` : `<p>${esc(line.text)}</p>`}</article>`).join('') || `<div class="empty-state"><p class="empty-copy">This project has no scenes yet.</p><p>Bring in a screenplay, or type or paste one.</p><div class="empty-actions"><button type="button" class="button primary" data-action="import">${icon('upload', 16)} Import a script</button><button type="button" class="button secondary" data-action="edit">Write or paste a script</button></div></div>`;
+  return current?.lines.map(line => line.kind === 'direction' ? `<p class="direction ${line.id === activeLine ? 'active' : ''} ${prefs.listen ? 'listening' : ''}" data-line="${esc(line.id)}">${esc(line.text)}</p>` : `<article class="dialogue ${prefs.listen && !revealed.has(line.id) ? 'listening' : ''} ${line.character === prefs.role ? 'my-line' : ''} ${line.character === highlightedCharacter(prefs, prefs.role) ? 'character-highlight' : ''} ${line.id === activeLine ? 'active' : ''} ${lineChecks.has(line.id) ? `checked-${lineChecks.get(line.id)}` : ''}" data-line="${esc(line.id)}"><div class="character-label">${esc(line.character)} ${line.character === prefs.role ? '<span>YOU</span>' : ''}${lineChecks.has(line.id) ? `<small class="line-check is-${lineChecks.get(line.id)}">${CHECK_WORDS[lineChecks.get(line.id)!]}</small>` : ''}</div>${lineHidden(prefs, line.character === prefs.role, revealed.has(line.id)) ? `<button class="hidden-line" data-action="reveal" data-id="${esc(line.id)}" aria-label="Reveal ${line.character === prefs.role ? 'your line' : 'this line'}">${prefs.hint ? `<span class="hint-text">${esc(firstLetters(line.text))}</span>` : '<span class="hidden-stroke"></span><span class="hidden-stroke short"></span>'}<small>Click to reveal ${line.character === prefs.role ? 'your line' : 'this line'}</small></button>` : `<p>${esc(line.text)}</p>`}</article>`).join('') || `<div class="empty-state"><p class="empty-copy">This project has no scenes yet.</p><p>Bring in a screenplay, or type or paste one.</p><div class="empty-actions"><button type="button" class="button primary" data-action="import">${icon('upload', 16)} Import a script</button><button type="button" class="button secondary" data-action="edit">Write or paste a script</button></div></div>`;
 }
 // Where each key comes from and what it is used for.
 const PROVIDERS: Record<string, { label: string; site: string; use: string }> = {
@@ -1287,7 +1309,7 @@ function settingsMarkup(): string {
         <h2 tabindex="-1" id="set-advanced-title">Advanced</h2>
         <details class="advanced"${settingsAdvancedOpen ? ' open' : ''}><summary><span class="when-closed">Show advanced settings</span><span class="when-open">Hide advanced settings</span></summary>
           ${engine === 'chatterbox' ? '' : row('service-chatterbox', 'Your Chatterbox server address', 'Used for your own voice, and when you switch back to Chatterbox.', `${input('service-chatterbox', draft.chatterbox.url, 'url', 'placeholder="For example http://192.168.1.20:8095"')}${result('chatterbox')}`)}
-          ${row('service-whisperx', 'WhisperX server', 'Not used yet. Continue when I stop speaking listens through the microphone on this computer and needs no server.', `${input('service-whisperx', draft.whisperx.url)}${result('whisperx')}`)}
+          ${row('service-whisperx', 'WhisperX server', 'Used by Check what I said, on the Practice card. Your line is sent there after the scene has already moved on, and compared with the script. Listening itself needs no server.', `${input('service-whisperx', draft.whisperx.url)}${result('whisperx')}`)}
           ${row('service-name', 'Name of this set-up', 'Shown when Script Glow starts, so you know which computer you are on.', input('service-name', draft.name, 'text'))}
           <label class="checkbox-label"><input type="checkbox" id="service-legacy" ${draft.chatterbox.legacyCache ? 'checked' : ''} ${off}> Reuse audio made by an older Script Glow</label>
           <p class="library-note">Addresses are saved in <code>data/connections.json</code>, which never holds a key, so it is safe to copy to another computer.</p>
@@ -1529,6 +1551,7 @@ function render() {
             ${prefs.hide || prefs.listen ? `<label class="checkbox-label"><input type="checkbox" id="first-letters" ${prefs.hint ? 'checked' : ''}> First letters of hidden lines</label>` : ''}
             <label class="checkbox-label"><input type="checkbox" id="wait-for-me" ${prefs.wait ? 'checked' : ''}> Wait for me on my line</label>
             ${prefs.wait ? `<label class="checkbox-label"><input type="checkbox" id="auto-continue" ${prefs.autoContinue ? 'checked' : ''}> Continue when I stop speaking</label>` : ''}
+            ${prefs.wait && prefs.autoContinue ? `<label class="checkbox-label"><input type="checkbox" id="check-lines" ${prefs.checkLines ? 'checked' : ''}> Check what I said<small>Sends each line to your WhisperX server</small></label>` : ''}
             ${prefs.wait && prefs.autoContinue ? `<div class="build-row"><label for="hold-ms">How long I can pause</label><select id="hold-ms">${HOLDS.map(ms => `<option value="${ms}" ${ms === prefs.holdMs ? 'selected' : ''}>${(ms / 1000).toFixed(1)}s</option>`).join('')}</select></div>` : ''}
             <label class="checkbox-label"><input type="checkbox" id="build-up" ${prefs.build ? 'checked' : ''}> Build up line by line</label>
             ${prefs.build ? `<div class="build-row"><label for="build-repeats">Times through each block</label><select id="build-repeats">${[1, 2, 3, 4, 5].map(times => `<option value="${times}" ${times === prefs.buildRepeats ? 'selected' : ''}>${times}×</option>`).join('')}</select><button type="button" class="text-link" data-action="build-restart">Start again</button></div>` : ''}
@@ -1863,6 +1886,7 @@ app.addEventListener('change', async event => {
   if (target.id === 'wait-for-me') { prefs.wait = target.checked; if (!target.checked) { if (waitingFor) waitingFor = ''; releaseMicrophone(); } persist(); }
   if (target.id === 'auto-continue') { prefs.autoContinue = target.checked; if (target.checked) { if (waitingFor) void beginListening(waitingFor); } else releaseMicrophone(); persist(); }
   if (target.id === 'hold-ms') { prefs.holdMs = HOLDS.includes(Number(target.value)) ? Number(target.value) : 500; persist(); }
+  if (target.id === 'check-lines') { prefs.checkLines = target.checked; if (!target.checked) lineChecks.clear(); persist(); }
   if (target.id === 'build-up') { prefs.build = target.checked; restartBuild(); applyRate(); persist(); }
   if (target.id === 'build-repeats') { prefs.buildRepeats = Number(target.value); restartBuild(); persist(); }
   if (target.id === 'playback-rate') { prefs.rate = Number(target.value); applyRate(); persist(); }
