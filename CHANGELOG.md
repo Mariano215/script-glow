@@ -2,7 +2,14 @@
 
 ## Unreleased
 
+## 0.4.0 (2026-09-20)
+
 - **Continue when I stop speaking.** With **Wait for me on my line** on, Script Glow listens through your microphone and carries on once you stop, so a scene runs with no hand on the keyboard. **How long I can pause** sets how long a silence has to be, from half a second to five seconds. Space and **Continue** still work. Only the loudness of the room is read: nothing is recorded, saved or sent.
+- **Script Glow runs on Linux.** Every release now carries an AppImage for Intel and AMD machines and another for ARM ones, alongside the Mac and Windows files. One file, no package manager, any distribution. AppImages are not signed: run `chmod +x` on it before you start it.
+- **Help opens where you are.** A small **i** button sits beside each screen heading and beside every voice service in Settings. It opens the user guide at that section instead of at the top.
+- **Step by step setup for every voice service.** New guide sections for the built-in voices, Chatterbox, ElevenLabs, OpenAI, Google Gemini and Ollama, written for someone who has never made an API key, plus a plain explanation of what a key is. Each links straight to the page where the key is made.
+- **Ask for help without knowing the jargon.** The guide now has an **Ask for help on GitHub** button that opens an issue with your version and browser already filled in, so you only have to say what happened.
+- Mac updates download as a small patch again instead of the whole app. The name of the update file did not match the name of the patch file beside it, so every update quietly fell back to a full download of 168 to 190 MB.
 
 ## 0.3.0 (2026-09-20)
 
