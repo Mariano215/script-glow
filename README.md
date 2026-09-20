@@ -23,7 +23,7 @@ By default everything runs on your own machine, and scripts and audio are not se
 - **Screenplay view**: US Letter geometry, 12 pt Courier, standard dialogue and parenthetical indents.
 - **Casting**: a card for every character with voice type, voice choice, and preview. Defaults come from script descriptions and pronoun cues. Ollama (local) or a hosted engine you choose in Settings can suggest voice types when the script gives no cue. Voices already in use are greyed out.
 - **Rehearsal**: full script or single scene, adjustable pause between lines, optional stage directions, loop, and 0.75× to 1.5× speed.
-- **Practice tools**: hide and reveal your lines, listen only, first letters of hidden lines, wait for me on my line, build up line by line, and Repeat A/B looping of one exchange.
+- **Practice tools**: hide and reveal your lines, listen only, first letters of hidden lines, wait for me on my line, continue when I stop speaking, build up line by line, and Repeat A/B looping of one exchange.
 - **Script marking**: separate highlight and playback colors for your role or any character. Marks stay visible in print.
 - **Self-tape**: record yourself on camera against the cast audio, with a count-in, a recording light, and the script beside or over the camera. Trim a take and make an MP4 for casting sites, with a check against Casting Networks, Eco Cast and Spotlight.
 - **Voice engines**: the included Chatterbox server (free and private, best with an NVIDIA GPU), or ElevenLabs, OpenAI, or Google Gemini as paid, hosted alternatives. Record your own voice for your role with Chatterbox.

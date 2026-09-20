@@ -9,6 +9,7 @@ import './studio.css';
 import { highlightDefaults, readHighlights, highlightedCharacter, lineHidden, safeColor, type HighlightPreferences } from './highlights';
 import { parseScript, sayItLike, sceneIncludes, spokenLines, SAMPLE, type Scene, type ScriptLine } from './parser';
 import { buildEnd, buildNext, buildTargets, cueAt, cueRate, firstLetters, loopRange, shouldWait, stepCue, type Cue } from './playback';
+import { releaseMicrophone, startListening, stopListening } from './listening';
 import { browserMp4, browserMp4Type, castingFileName, castingFit, countBeep, monoWav, setReaderLevel, mixerState, openRecorder, resumeMixer, takeClock, takeContainer, takeLabel, takeNeedsConverting, type Take, type TakeRecorder } from './selftape';
 import { inferCharacters, assignCast, resolvedGender, voiceGenders, voiceOwners, validGuesses, withNameGuesses, type NameGuesses, type GenderChoice } from './casting';
 import { voiceCatalog } from './voice-catalog';
@@ -17,8 +18,11 @@ import { parseServerHost } from './server-address';
 
 interface RenderResult { fullUrl: string; practiceUrl: string; duration: number; cues: Cue[] }
 interface Job { id: string; status: 'queued' | 'running' | 'complete' | 'error'; completed: number; total: number; error?: string; result?: RenderResult }
-interface Preferences extends HighlightPreferences { source: string; name: string; role: string; cast: Record<string, string>; sayAs: Record<string, string>; guesses: NameGuesses; genders: Record<string, GenderChoice>; manualVoices: Record<string, boolean>; sceneId: string; gap: number; directions: boolean; hide: boolean; listen: boolean; hint: boolean; wait: boolean; build: boolean; buildRepeats: number; tapeW: number; tapeH: number; loopA: string; loopB: string; tapeOverlay: boolean; tapeX: number; tapeY: number; follow: boolean; loop: boolean; rate: number; mode: 'full' | 'practice' ; readerLevel: number }
-const defaults: Preferences = { ...highlightDefaults, source: SAMPLE, name: 'The Last Light', role: 'MARCUS', cast: {}, sayAs: {}, guesses: {}, genders: {}, manualVoices: {}, sceneId: 'scene-1', gap: 1, directions: false, hide: false, listen: false, hint: false, wait: false, build: false, buildRepeats: 2, loopA: '', loopB: '', tapeOverlay: false, readerLevel: 1, tapeX: 50, tapeY: 78, tapeW: 0, tapeH: 0, follow: true, loop: false, rate: 1, mode: 'full' };
+interface Preferences extends HighlightPreferences { source: string; name: string; role: string; cast: Record<string, string>; sayAs: Record<string, string>; guesses: NameGuesses; genders: Record<string, GenderChoice>; manualVoices: Record<string, boolean>; sceneId: string; gap: number; directions: boolean; hide: boolean; listen: boolean; hint: boolean; wait: boolean; autoContinue: boolean; holdMs: number; build: boolean; buildRepeats: number; tapeW: number; tapeH: number; loopA: string; loopB: string; tapeOverlay: boolean; tapeX: number; tapeY: number; follow: boolean; loop: boolean; rate: number; mode: 'full' | 'practice' ; readerLevel: number }
+// How long the actor may pause before listening takes the line as finished. Half second steps,
+// the same shape as the pause between lines, because it is the same kind of choice.
+const HOLDS = [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000];
+const defaults: Preferences = { ...highlightDefaults, source: SAMPLE, name: 'The Last Light', role: 'MARCUS', cast: {}, sayAs: {}, guesses: {}, genders: {}, manualVoices: {}, sceneId: 'scene-1', gap: 1, directions: false, hide: false, listen: false, hint: false, wait: false, autoContinue: false, holdMs: 500, build: false, buildRepeats: 2, loopA: '', loopB: '', tapeOverlay: false, readerLevel: 1, tapeX: 50, tapeY: 78, tapeW: 0, tapeH: 0, follow: true, loop: false, rate: 1, mode: 'full' };
 // Defined before restored() runs: used any earlier, they throw, and the catch in restored() would
 // quietly replace a saved draft with the sample script.
 // The script can sit over the camera so the actor's eyeline stays near the lens. Its place is
@@ -36,7 +40,7 @@ function restored(): Preferences {
       genders: record(saved.genders, item => ['auto', 'male', 'female', 'unknown'].includes(item as string)) as Record<string, GenderChoice>,
       manualVoices: record(saved.manualVoices, item => typeof item === 'boolean') as Record<string, boolean>,
       sayAs: record(saved.sayAs, item => typeof item === 'string') as Record<string, string>,
-      directions: saved.directions === true, follow: saved.follow !== false, loop: saved.loop === true, source: typeof saved.source === 'string' ? saved.source : SAMPLE, cast: record(saved.cast, item => typeof item === 'string') as Record<string, string>, hide: saved.hide === true, listen: saved.listen === true, hint: saved.hint === true, wait: saved.wait === true, build: saved.build === true, buildRepeats: [1, 2, 3, 4, 5].includes(Number(saved.buildRepeats)) ? Number(saved.buildRepeats) : 2, loopA: typeof saved.loopA === 'string' ? saved.loopA : '', loopB: typeof saved.loopB === 'string' ? saved.loopB : '', tapeOverlay: saved.tapeOverlay === true, readerLevel: typeof saved.readerLevel === 'number' && Number.isFinite(saved.readerLevel) ? Math.min(1.5, Math.max(0, saved.readerLevel)) : 1, tapeX: tapePercent(saved.tapeX, 50), tapeY: tapePercent(saved.tapeY, 78), tapeW: tapeSize(saved.tapeW), tapeH: tapeSize(saved.tapeH), gap: Math.min(5, Math.max(0, Number(saved.gap ?? 1))), rate: [0.75, 1, 1.25, 1.5].includes(Number(saved.rate)) ? Number(saved.rate) : 1 };
+      directions: saved.directions === true, follow: saved.follow !== false, loop: saved.loop === true, source: typeof saved.source === 'string' ? saved.source : SAMPLE, cast: record(saved.cast, item => typeof item === 'string') as Record<string, string>, hide: saved.hide === true, listen: saved.listen === true, hint: saved.hint === true, wait: saved.wait === true, autoContinue: saved.autoContinue === true, holdMs: HOLDS.includes(Number(saved.holdMs)) ? Number(saved.holdMs) : 500, build: saved.build === true, buildRepeats: [1, 2, 3, 4, 5].includes(Number(saved.buildRepeats)) ? Number(saved.buildRepeats) : 2, loopA: typeof saved.loopA === 'string' ? saved.loopA : '', loopB: typeof saved.loopB === 'string' ? saved.loopB : '', tapeOverlay: saved.tapeOverlay === true, readerLevel: typeof saved.readerLevel === 'number' && Number.isFinite(saved.readerLevel) ? Math.min(1.5, Math.max(0, saved.readerLevel)) : 1, tapeX: tapePercent(saved.tapeX, 50), tapeY: tapePercent(saved.tapeY, 78), tapeW: tapeSize(saved.tapeW), tapeH: tapeSize(saved.tapeH), gap: Math.min(5, Math.max(0, Number(saved.gap ?? 1))), rate: [0.75, 1, 1.25, 1.5].includes(Number(saved.rate)) ? Number(saved.rate) : 1 };
   } catch { return { ...defaults }; }
 }
 let prefs = restored();
@@ -224,10 +228,22 @@ const applyRate = () => { audio.playbackRate = cueRate(prefs, currentCue()?.char
 let waitingFor = '';
 let resumedLine = '';
 function releaseWait() {
+  stopListening();
   const cue = result?.cues.find(item => item.lineId === waitingFor);
   resumedLine = waitingFor; waitingFor = '';
   if (cue) audio.currentTime = cue.end;
   void audio.play().catch(error => flash(`Playback could not start: ${error.message}`, true));
+}
+// The microphone is opened on the first wait and read only while the app is waiting. A refusal
+// or a busy device turns listening off and says so, because Space and Continue still work.
+async function beginListening(lineId: string) {
+  try {
+    await startListening(prefs.holdMs, () => { if (waitingFor !== lineId) return; releaseWait(); render(); });
+  } catch (error) {
+    prefs.autoContinue = false; persist();
+    flash(error instanceof Error ? error.message : 'The microphone could not be used, so listening is off.', true);
+    render();
+  }
 }
 let previewAudio: HTMLAudioElement | null = null;
 let previewVoice = '';
@@ -488,6 +504,7 @@ function invalidate(restoreCompleted = false) {
   generation++;
   audioLoadVersion++;
   if (busy() && job) void api(`/api/jobs/${encodeURIComponent(job.id)}/cancel`, { method: 'POST' }).catch(() => {});
+  stopListening();
   job = null; result = null; loadedMode = null; legacyAudio = false; audio.pause(); audio.removeAttribute('src'); audio.load(); activeLine = ''; revealed.clear(); waitingFor = ''; resumedLine = '';
   if (cacheSource !== prefs.source) { if (!projectId) completedScenes.clear(); cacheSource = prefs.source; persistRenders(); }
   const current = scene();
@@ -1502,6 +1519,8 @@ function render() {
           <section class="settings-card practice-card"><div class="card-heading"><h2>Practice</h2>${icon('eye', 19)}</div>
             <label class="checkbox-label"><input type="checkbox" id="first-letters" ${prefs.hint ? 'checked' : ''}> First letters of hidden lines</label>
             <label class="checkbox-label"><input type="checkbox" id="wait-for-me" ${prefs.wait ? 'checked' : ''}> Wait for me on my line</label>
+            ${prefs.wait ? `<label class="checkbox-label"><input type="checkbox" id="auto-continue" ${prefs.autoContinue ? 'checked' : ''}> Continue when I stop speaking</label>` : ''}
+            ${prefs.wait && prefs.autoContinue ? `<label class="gap-label" for="hold-ms">How long I can pause <strong id="hold-value">${(prefs.holdMs / 1000).toFixed(1)}s</strong></label><input type="range" id="hold-ms" min="500" max="5000" step="500" value="${prefs.holdMs}"><div class="range-labels"><span>Natural</span><span>Take your time</span></div>` : ''}
             <label class="checkbox-label"><input type="checkbox" id="build-up" ${prefs.build ? 'checked' : ''}> Build up line by line</label>
             ${prefs.build ? `<div class="build-row"><label for="build-repeats">Times through each block</label><select id="build-repeats">${[1, 2, 3, 4, 5].map(times => `<option value="${times}" ${times === prefs.buildRepeats ? 'selected' : ''}>${times}×</option>`).join('')}</select><button type="button" class="text-link" data-action="build-restart">Start again</button></div>` : ''}
             <div class="loop-marks"><span>Repeat</span><button type="button" data-action="mark-a" class="${prefs.loopA ? 'enabled' : ''}" aria-pressed="${!!prefs.loopA}" ${!result ? 'disabled' : ''}>A</button><button type="button" data-action="mark-b" class="${prefs.loopB ? 'enabled' : ''}" aria-pressed="${!!prefs.loopB}" ${!result ? 'disabled' : ''}>B</button><button type="button" data-action="clear-marks" ${!prefs.loopA && !prefs.loopB ? 'disabled' : ''}>Clear</button></div>
@@ -1782,6 +1801,7 @@ app.addEventListener('input', event => {
   if (target.id === 'seek' && result) audio.currentTime = Number(target.value);
   if (target.id === 'reader-level') { const out = document.querySelector('output[for="reader-level"]'); if (out) out.textContent = `${Math.round(Number(target.value) * 100)}%`; }
   if (target.id === 'line-gap') { const label = document.querySelector('#gap-value'); if (label) label.textContent = `${Number(target.value).toFixed(1)}s`; }
+  if (target.id === 'hold-ms') { const label = document.querySelector('#hold-value'); if (label) label.textContent = `${(Number(target.value) / 1000).toFixed(1)}s`; }
 });
 app.addEventListener('change', async event => {
   const target = event.target as HTMLInputElement;
@@ -1835,7 +1855,9 @@ app.addEventListener('change', async event => {
   if (target.id === 'tape-overlay') { prefs.tapeOverlay = target.checked; persist(); }
   if (target.id === 'tape-follow') { prefs.follow = target.checked; persist(); if (prefs.follow) syncActiveLine(true); }
   if (target.id === 'first-letters') { prefs.hint = target.checked; persist(); }
-  if (target.id === 'wait-for-me') { prefs.wait = target.checked; if (!target.checked && waitingFor) waitingFor = ''; persist(); }
+  if (target.id === 'wait-for-me') { prefs.wait = target.checked; if (!target.checked) { if (waitingFor) waitingFor = ''; releaseMicrophone(); } persist(); }
+  if (target.id === 'auto-continue') { prefs.autoContinue = target.checked; if (target.checked) { if (waitingFor) void beginListening(waitingFor); } else releaseMicrophone(); persist(); }
+  if (target.id === 'hold-ms') { prefs.holdMs = HOLDS.includes(Number(target.value)) ? Number(target.value) : 500; persist(); }
   if (target.id === 'build-up') { prefs.build = target.checked; restartBuild(); applyRate(); persist(); }
   if (target.id === 'build-repeats') { prefs.buildRepeats = Number(target.value); restartBuild(); persist(); }
   if (target.id === 'playback-rate') { prefs.rate = Number(target.value); applyRate(); persist(); }
@@ -1882,7 +1904,11 @@ audio.addEventListener('timeupdate', () => {
   }
   const range = !prefs.build && markedRange();
   if (range && position >= range.end) { audio.currentTime = range.start; return; }
-  if (!audio.paused && !recorder?.recording && shouldWait(prefs, cue, resumedLine)) { waitingFor = cue!.lineId; audio.pause(); render(); return; }
+  if (!audio.paused && !recorder?.recording && shouldWait(prefs, cue, resumedLine)) {
+    waitingFor = cue!.lineId; audio.pause(); render();
+    if (prefs.autoContinue) void beginListening(waitingFor);
+    return;
+  }
   if ((cue?.lineId || '') !== activeLine) syncActiveLine(true);
   updatePlaybackStatus();
 });

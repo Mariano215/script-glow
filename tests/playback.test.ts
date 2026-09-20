@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cueRate, cueAt, stepCue, shouldWait, firstLetters, loopRange, buildTargets, buildEnd, buildNext } from '../src/playback.ts';
+import { cueRate, cueAt, stepCue, shouldWait, firstLetters, loopRange, buildTargets, buildEnd, buildNext, listenStart, listenStep } from '../src/playback.ts';
 
 const cues = [
   { lineId: 'a', start: 0, end: 2, character: 'DAVID' },
@@ -79,4 +79,40 @@ test('additive rehearsal grows by the actor\'s own lines and repeats each block'
   assert.deepEqual(buildNext(1, 2, 2, 2), { step: 1, pass: 2, done: true }, 'The last block finishes the scene');
   assert.deepEqual(buildNext(0, 1, 1, 2), { step: 1, pass: 1, done: false }, 'One repeat moves straight on');
   assert.deepEqual(buildNext(0, 1, 0, 2), { step: 1, pass: 1, done: false }, 'A nonsense repeat count still advances');
+});
+
+// A run of microphone levels, 20 ms apart, the way the browser samples them.
+const run = (holdMs: number, levels: number[], from = 0) =>
+  levels.reduce((state, level, index) => listenStep(state, level, from + index * 20, holdMs), listenStart(from));
+const steady = (count: number, level: number) => Array.from({ length: count }, () => level);
+// The room is measured over the first 300 ms of the wait, so every run starts with that.
+const room = steady(16, 0.004);
+
+test('the microphone ends the wait only after speech, and only after the held silence', () => {
+  const holdMs = 500;
+  assert.equal(run(holdMs, room).phase, 'quiet', 'Room noise alone is never taken for a line');
+  assert.equal(run(holdMs, [...room, ...steady(200, 0.003)]).phase, 'quiet', 'An actor who never speaks is waited for');
+  assert.equal(run(holdMs, [...room, ...steady(50, 0.2)]).phase, 'speaking', 'Speech that has not stopped is not a finished line');
+  assert.equal(run(holdMs, [...room, ...steady(50, 0.2), ...steady(20, 0.003)]).phase, 'speaking', 'Silence shorter than the hold does not end the line');
+  assert.equal(run(holdMs, [...room, ...steady(50, 0.2), ...steady(30, 0.003)]).phase, 'done', 'Silence past the hold ends it');
+});
+
+test('a hold set for an actor who pauses waits that much longer', () => {
+  const line = [...room, ...steady(50, 0.2)];
+  const pause = steady(100, 0.003);
+  assert.equal(run(500, [...line, ...pause]).phase, 'done', 'Two seconds of silence ends a half second hold');
+  assert.equal(run(5000, [...line, ...pause]).phase, 'speaking', 'The same pause is still the actor thinking on a five second hold');
+  assert.equal(run(5000, [...line, ...pause, ...steady(50, 0.2), ...steady(300, 0.003)]).phase, 'done', 'They speak again, then stop for good');
+});
+
+test('a spike is not speech, and a loud room raises its own floor', () => {
+  assert.equal(run(500, [...room, 0.2, 0.2, ...steady(40, 0.003)]).phase, 'quiet', 'A cough of 40 ms never starts the line');
+  const noisy = steady(16, 0.05);
+  assert.equal(run(500, [...noisy, ...steady(50, 0.06)]).phase, 'quiet', 'A fan at the same level as the room is still the room');
+  assert.equal(run(500, [...noisy, ...steady(50, 0.3), ...steady(30, 0.05)]).phase, 'done', 'Speech over the fan is heard, and the fan is the silence it ends in');
+});
+
+test('the wait is only ended once', () => {
+  const ended = run(500, [...room, ...steady(50, 0.2), ...steady(30, 0.003)]);
+  assert.equal(listenStep(ended, 0.9, 10_000, 500).phase, 'done', 'A door slamming after the line does not reopen it');
 });

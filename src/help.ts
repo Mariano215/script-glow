@@ -15,6 +15,7 @@ const sections: [string, string][] = [
     <li><strong>Listen only</strong> hides the whole scene, so you rehearse by ear instead of reading along.</li>
     <li><strong>First letters of hidden lines</strong> shows the first letter of each word instead of a blank block, as a prompt.</li>
     <li><strong>Wait for me on my line</strong> pauses practice mode on your line. Press Space or tap <strong>Continue</strong> on the player to go on.</li>
+    <li><strong>Continue when I stop speaking</strong> listens through your microphone and goes on by itself once you stop. <strong>How long I can pause</strong> sets how long a silence has to be before your line counts as finished, from half a second to five seconds, so a scene with pauses in it is not cut short. Space and <strong>Continue</strong> still work, so you can always come in early. Only the loudness of the room is read: nothing is recorded, nothing is saved and nothing is sent anywhere.</li>
     <li><strong>Build up line by line</strong> learns the scene the way actors do: your first line, repeated, then your first and second, and so on. Set <strong>Times through each block</strong>, and press <strong>Start again</strong> to go back to the first line.</li>
     <li>Click any line to move the scene to it. Play carries on from there.</li>
     <li>The player steps cue by cue with the arrow buttons, or the left and right arrow keys. Space plays and pauses. Seek by dragging the scrub bar.</li>

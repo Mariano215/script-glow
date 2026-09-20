@@ -56,3 +56,32 @@ export function buildNext(step: number, pass: number, repeats: number, total: nu
   if (step + 1 < total) return { step: step + 1, pass: 1, done: false };
   return { step, pass, done: true };
 }
+
+// Listening mode. The actor's line in practice mode is baked silence, so while the app waits
+// the only sound in the room is the actor, and the microphone level alone can say when they
+// finished. A transcript cannot: the server needs the finished clip and answers about a second
+// later, which is far too late to come in on. Space and Continue keep working either way.
+export type ListenPhase = 'calibrating' | 'quiet' | 'speaking' | 'done';
+export interface ListenState { phase: ListenPhase; floor: number; since: number; edge: number }
+const CALIBRATE_MS = 300, SPEECH_MS = 120, MIN_FLOOR = 0.015, MAX_FLOOR = 0.25;
+export const listenStart = (at: number): ListenState => ({ phase: 'calibrating', floor: 0, since: at, edge: at });
+
+// One microphone level, between 0 and 1. `edge` is when the current run began: the run of
+// loud samples while quiet, the run of silent ones while speaking.
+export function listenStep(state: ListenState, level: number, at: number, holdMs: number): ListenState {
+  if (state.phase === 'done') return state;
+  if (state.phase === 'calibrating') {
+    // The room sets its own floor, so a fan or a street outside does not read as a line.
+    // Capped, because an actor who speaks straight away would otherwise raise the floor
+    // above their own voice and never be heard.
+    if (at - state.since < CALIBRATE_MS) return { ...state, floor: Math.max(state.floor, level) };
+    return { phase: 'quiet', floor: Math.min(Math.max(state.floor * 2, MIN_FLOOR), MAX_FLOOR), since: state.since, edge: at };
+  }
+  const loud = level > state.floor;
+  if (state.phase === 'quiet') {
+    if (!loud) return { ...state, edge: at };
+    return at - state.edge >= SPEECH_MS ? { ...state, phase: 'speaking', edge: at } : state;
+  }
+  if (loud) return { ...state, edge: at };
+  return at - state.edge >= holdMs ? { ...state, phase: 'done' } : state;
+}

@@ -160,3 +160,16 @@ test('say it like respellings are kept per character and checked', () => {
   assert.deepEqual(validatePreferences(preferences()).sayAs, {}, 'Projects saved before this feature have none');
   for (const how of ['x'.repeat(101), 'a\nb', '', 3]) assert.throws(() => validatePreferences({ ...preferences(), sayAs: { SIOBHAN: how } }), /casting preferences/);
 });
+
+test('listening travels with the project, and a nonsense pause is refused', () => {
+  const base = validatePreferences(preferences());
+  assert.equal(base.autoContinue, false, 'A project saved before listening existed opens with it off');
+  assert.equal(base.holdMs, 500);
+  const listening = validatePreferences({ ...preferences(), autoContinue: true, holdMs: 3000 });
+  assert.equal(listening.autoContinue, true);
+  assert.equal(listening.holdMs, 3000, 'The pause the actor set is kept with the project');
+  for (const holdMs of [250, 700, 5500, 0, '500', 1.5]) {
+    assert.throws(() => validatePreferences({ ...preferences(), holdMs }), /rehearsal settings/, `Refused: ${holdMs}`);
+  }
+  assert.throws(() => validatePreferences({ ...preferences(), autoContinue: 'yes' }), /rehearsal settings/);
+});
