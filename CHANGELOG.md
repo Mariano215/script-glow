@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Check what I said.** With listening on, each of your lines is marked in the script as **Said**, **Half said** or **Not this line**, so you can see where you dried or jumped a line. It needs a WhisperX server address under Settings, Advanced. Your line goes there after the scene has already carried on, so the rehearsal is never held up waiting for it. Off until you switch it on, marks last only for the run, and nothing is scored or saved.
 - **The Linux download is less than half the size.** The AppImage for Intel and AMD machines was 398 MB and is now 172 MB, the same size as the ARM one. It was carrying 343 MB of NVIDIA graphics-card libraries that Script Glow never uses: a piece of the voice engine fetched them on its own while the release was built. The app itself is unchanged, there is simply far less to download. The ARM AppImage was never affected.
 - Building from source no longer lets a package run its own setup program unasked. Every one in the project is named and refused in `package.json`, and the install now stops instead of carrying on if a new one appears.
 

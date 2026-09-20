@@ -85,3 +85,27 @@ export function listenStep(state: ListenState, level: number, at: number, holdMs
   if (loud) return { ...state, edge: at };
   return at - state.edge >= holdMs ? { ...state, phase: 'done' } : state;
 }
+
+// What the actor said, against the line as written. The transcript arrives about a second after
+// the wait has already been released, so this never decides timing: it only marks the line as
+// said, half said, or not this line at all. An actor is not judged on spelling or punctuation,
+// and the transcription server labels the speaker, so both sides are reduced to bare words.
+export type LineVerdict = 'said' | 'partial' | 'different';
+const words = (text: string): string[] =>
+  text.replace(/^\s*SPEAKER_\d+\s*:\s*/i, '').toLowerCase().replace(/[^\p{L}\p{N}\s']/gu, ' ').split(/\s+/).filter(Boolean);
+
+export function lineMatch(spoken: string, expected: string): { score: number; verdict: LineVerdict } {
+  const wanted = words(expected);
+  if (!wanted.length) return { score: 1, verdict: 'said' };
+  // A word the actor said is spent, so repeating one word does not cover a line.
+  const heard = words(spoken);
+  const pool = new Map<string, number>();
+  for (const word of heard) pool.set(word, (pool.get(word) ?? 0) + 1);
+  let found = 0;
+  for (const word of wanted) {
+    const left = pool.get(word) ?? 0;
+    if (left > 0) { pool.set(word, left - 1); found++; }
+  }
+  const score = found / wanted.length;
+  return { score, verdict: score >= 0.7 ? 'said' : score >= 0.4 ? 'partial' : 'different' };
+}

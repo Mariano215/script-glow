@@ -30,8 +30,8 @@ await writeFile(speechFile, microphoneFile(1.5));
 await writeFile(silentFile, microphoneFile(0));
 
 // The same scene twice, once with a microphone that speaks and once with one that does not.
-async function rehearse(microphone) {
-  const app = await studio({ projects: [project] });
+async function rehearse(microphone, extra = {}, services) {
+  const app = await studio({ projects: [{ ...project, ...extra }], services });
   const browser = await launch([...MEDIA_ARGS, `--use-file-for-fake-audio-capture=${microphone}`, '--autoplay-policy=no-user-gesture-required']);
   try {
     const page = await openStudio(browser, app.base);
@@ -91,7 +91,20 @@ try {
   await choose(open.page, '#auto-continue', false);
   assert.ok(await open.page.evaluate(() => document.querySelector('#hold-ms') === null), 'The pause slider belongs to listening and goes with it');
   assert.deepEqual(open.errors, [], 'No page errors with listening off');
-  console.log('Listening mode: speech ends the wait, silence does not, Space always does.');
+  await open.browser.close(); await open.app.close(); open = null;
+
+  // Check what I said: the line is marked after the cue has already gone.
+  let asked = null;
+  open = await rehearse(speechFile, { checkLines: true }, async (url, options) => {
+    if (!url.endsWith('/v1/audio/transcriptions')) return null;
+    asked = options?.body instanceof FormData ? options.body.get('file')?.size ?? 0 : 0;
+    return Buffer.from(JSON.stringify({ text: 'SPEAKER_00: I wanted to wait.' }));
+  });
+  await open.wait('listening to end the wait', () => !document.querySelector('.play-button.is-waiting'), 30000);
+  await open.wait('the line to be marked as said', () => !!document.querySelector('.dialogue.checked-said .line-check.is-said'), 30000);
+  assert.ok(asked > 44, 'A real WAV clip reached the transcription server');
+  assert.deepEqual(open.errors, [], 'No page errors while checking');
+  console.log('Listening mode: speech ends the wait, silence does not, Space always does, and the line is marked.');
 } finally {
   if (open) { await open.browser.close(); await open.app.close(); }
   await rm(temp, { recursive: true, force: true });

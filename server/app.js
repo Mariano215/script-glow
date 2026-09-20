@@ -319,6 +319,25 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
     res.type('audio/wav').send(encodeWav(await lineAudio('Hello. This is how I sound when I read your scene with you.', voice)));
   });
   app.post('/api/casting/guess-genders', async (req, res) => res.json(await castingAI.guess(req.body)));
+  // The actor's own line, checked against the script after the wait has already been released,
+  // so the transcript never decides when the scene goes on. The clip is held in memory here and
+  // passed straight to the transcription server the actor named: it is never written to disk.
+  app.post('/api/listen/transcribe', async (req, res) => {
+    if (typeof req.body?.data !== 'string' || req.body.data.length > 4000000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(req.body.data)) throw fail('Send one short WAV clip of a single line.');
+    const clip = Buffer.from(req.body.data, 'base64');
+    if (clip.length > 3 * 1024 * 1024 || clip.subarray(0, 4).toString() !== 'RIFF') throw fail('Send one short WAV clip of a single line.');
+    const form = new FormData();
+    form.set('file', new Blob([clip], { type: 'audio/wav' }), 'line.wav');
+    form.set('model', 'Systran/faster-whisper-large-v3');
+    form.set('language', 'en');
+    let answer;
+    try { answer = await serviceFetch(`${STT_URL()}/v1/audio/transcriptions`, { method: 'POST', body: form, signal: AbortSignal.timeout(60000) }, 2000000); }
+    catch { throw fail('The transcription server did not answer. Check its address in Settings, under Advanced, or switch Check what I said off.', 502); }
+    let text;
+    try { text = JSON.parse(answer.toString('utf8')).text; } catch { text = null; }
+    if (typeof text !== 'string') throw fail('The transcription server sent something this app does not understand.', 502);
+    res.json({ text });
+  });
   app.post('/api/import', async (req, res) => {
     if (!string(req.body?.name, 300) || typeof req.body?.data !== 'string' || req.body.data.length > 14000000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(req.body.data)) throw fail('Upload a PDF smaller than 10 MB.');
     const data = Buffer.from(req.body.data, 'base64');

@@ -2,6 +2,7 @@
 // they have finished, so the scene goes on without a key press. Only the level is read: no
 // recording is kept, nothing is written to disk and nothing leaves the browser.
 import { listenStart, listenStep, type ListenState } from './playback';
+import { monoWav } from './selftape';
 
 const SAMPLE_MS = 20;
 let stream: MediaStream | null = null;
@@ -9,6 +10,7 @@ let context: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
 let samples: Float32Array<ArrayBuffer> | null = null;
 let timer: ReturnType<typeof setInterval> | undefined;
+let recorder: MediaRecorder | null = null;
 
 // A device another program holds can leave this pending for ever, so it is given a limit.
 // The actor is told, listening switches off, and Space still ends the wait as it always has.
@@ -34,7 +36,9 @@ function level(): number {
   return Math.sqrt(total / samples.length);
 }
 
-export async function startListening(holdMs: number, done: () => void): Promise<void> {
+// `clip` is optional and only used with Check what I said. It is called after the wait has
+// already been released, with the actor's line as a WAV, so transcription never delays the cue.
+export async function startListening(holdMs: number, done: () => void, clip?: (wav: Blob) => void): Promise<void> {
   if (timer !== undefined) return;
   const live = await microphone();
   if (!context) context = new AudioContext();
@@ -45,6 +49,15 @@ export async function startListening(holdMs: number, done: () => void): Promise<
     samples = new Float32Array(analyser.fftSize);
     context.createMediaStreamSource(live).connect(analyser);
   }
+  if (clip) {
+    const chunks: Blob[] = [];
+    recorder = new MediaRecorder(live);
+    recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+    // The cue has already gone by the time this runs. Nothing is written to disk, and the
+    // chunks are dropped as soon as the WAV is handed over.
+    recorder.onstop = () => { void toWav(chunks).then(wav => { if (wav) clip(wav); }); };
+    recorder.start();
+  }
   let state: ListenState = listenStart(performance.now());
   timer = setInterval(() => {
     state = listenStep(state, level(), performance.now(), holdMs);
@@ -54,11 +67,24 @@ export async function startListening(holdMs: number, done: () => void): Promise<
   }, SAMPLE_MS);
 }
 
+// The recorder gives WebM; the transcription server is given a plain WAV, the one format
+// every Whisper build reads without guessing from the file name.
+async function toWav(chunks: Blob[]): Promise<Blob | null> {
+  if (!chunks.length || !context) return null;
+  try {
+    const decoded = await context.decodeAudioData(await new Blob(chunks).arrayBuffer());
+    const channels = Array.from({ length: decoded.numberOfChannels }, (_, index) => decoded.getChannelData(index));
+    return new Blob([monoWav(channels, decoded.sampleRate)], { type: 'audio/wav' });
+  } catch { return null; }
+}
+
 // Between lines the level is not read. The stream stays open, because asking again on every
 // line blinks the browser's microphone light and costs about 200 ms at each cue.
 export function stopListening(): void {
   clearInterval(timer);
   timer = undefined;
+  if (recorder?.state === 'recording') recorder.stop();
+  recorder = null;
 }
 
 // The scene is closed: give the microphone back, so the light goes out.

@@ -65,6 +65,11 @@ body.is-taping .player{opacity:.55}
 
 /* Links on the light screens; the sidebar keeps its own. */
 .main .text-link{color:#4f6b3c}
+/* What the actor said, checked against the line. Quiet by design: it is a note, not a score. */
+.line-check{margin-left:8px;font-size:11px;letter-spacing:.6px;font-weight:600;padding:2px 7px;border-radius:99px;background:#eef2e6;color:#4f6b45}
+.line-check.is-partial{background:#f8efe0;color:#6f4b1c}
+.line-check.is-different{background:#f6e6e2;color:#8a3f2c}
+
 /* Touch screens: every control is at least 44px, so a thumb finds it. */
 @media (pointer: coarse) {
   .icon-button, .play-button, .loop-marks button, .take-actions button, .take-actions a, .notice button, .job-label button { min-width: 44px; min-height: 44px; }

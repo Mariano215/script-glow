@@ -172,4 +172,7 @@ test('listening travels with the project, and a nonsense pause is refused', () =
     assert.throws(() => validatePreferences({ ...preferences(), holdMs }), /rehearsal settings/, `Refused: ${holdMs}`);
   }
   assert.throws(() => validatePreferences({ ...preferences(), autoContinue: 'yes' }), /rehearsal settings/);
+  assert.equal(base.checkLines, false, 'Checking what was said is off until the actor asks for it');
+  assert.equal(validatePreferences({ ...preferences(), checkLines: true }).checkLines, true);
+  assert.throws(() => validatePreferences({ ...preferences(), checkLines: 'sure' }), /rehearsal settings/);
 });
