@@ -82,16 +82,26 @@ jobs:
               exit 1
             fi
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
+            # The Azure values are optional as a set: sign with all of them, build unsigned with
+            # none of them, but refuse a half-set since that is a mistake, not a choice.
+            azure_names="AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_CERT_PROFILE AZURE_PUBLISHER_NAME"
             missing=""
-            [[ -z "$AZURE_TENANT_ID" ]] && missing="$missing AZURE_TENANT_ID"
-            [[ -z "$AZURE_CLIENT_ID" ]] && missing="$missing AZURE_CLIENT_ID"
-            [[ -z "$AZURE_CLIENT_SECRET" ]] && missing="$missing AZURE_CLIENT_SECRET"
-            [[ -z "$AZURE_SIGNING_ENDPOINT" ]] && missing="$missing AZURE_SIGNING_ENDPOINT"
-            [[ -z "$AZURE_SIGNING_ACCOUNT" ]] && missing="$missing AZURE_SIGNING_ACCOUNT"
-            [[ -z "$AZURE_CERT_PROFILE" ]] && missing="$missing AZURE_CERT_PROFILE"
-            [[ -z "$AZURE_PUBLISHER_NAME" ]] && missing="$missing AZURE_PUBLISHER_NAME"
-            if [[ -n "$missing" ]]; then
-              echo "Error: Missing Windows signing secrets:$missing" >&2
+            present=0
+            for name in $azure_names; do
+              if [[ -z "${!name}" ]]; then
+                missing="$missing $name"
+              else
+                present=$((present + 1))
+              fi
+            done
+            if [[ "$present" -eq 7 ]]; then
+              echo "All Azure signing values present. This Windows build will be signed."
+            elif [[ "$present" -eq 0 ]]; then
+              line="This Windows build is not signed. Windows will show a SmartScreen warning."
+              echo "$line"
+              echo "$line" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "Error: Some Azure signing values are set but these are missing:$missing" >&2
               exit 1
             fi
           fi
@@ -141,3 +151,24 @@ jobs:
           AZURE_PUBLISHER_NAME: ${{ vars.AZURE_PUBLISHER_NAME }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx electron-builder --config desktop/builder.cjs --publish always
+      # Tells the person who publishes the draft which files are signed, since the Windows
+      # installer is unsigned until the Azure values exist.
+      - name: Note signing status in the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          REPO_NAME: ${{ github.repository }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+        run: |
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            note="The Mac files are signed and notarized."
+          elif [[ -n "$AZURE_SIGNING_ACCOUNT" ]]; then
+            note="The Windows installer is signed."
+          else
+            note="The Windows installer is not signed yet, so Windows shows a SmartScreen warning: choose More info, then Run anyway."
+          fi
+          body="$(gh release view "$TAG_NAME" --repo "$REPO_NAME" --json body --jq .body)"
+          notes_file="$(mktemp)"
+          printf '%s\n\n%s\n' "$body" "$note" > "$notes_file"
+          gh release edit "$TAG_NAME" --repo "$REPO_NAME" --notes-file "$notes_file"
