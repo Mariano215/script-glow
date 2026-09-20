@@ -151,7 +151,12 @@ jobs:
           AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
           AZURE_CERT_PROFILE: ${{ vars.AZURE_CERT_PROFILE }}
           AZURE_PUBLISHER_NAME: ${{ vars.AZURE_PUBLISHER_NAME }}
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # Windows signs through Azure Trusted Signing, so identity discovery stays off there or
+          # electron-builder hunts for a certificate the runner does not have. macOS needs it ON:
+          # the Developer ID identity lives in the keychain electron-builder builds from CSC_LINK,
+          # and with discovery off electron-builder finds no identity, then skips both signing and
+          # notarization with only a warning. Evaluates to the string true on macOS, false on Windows.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ runner.os == 'macOS' }}
         run: npx electron-builder --config desktop/builder.cjs --publish always
       # Tells the person who publishes the draft which files are signed, since the Windows
       # installer is unsigned until the Azure values exist. Runs only on the macOS leg: both

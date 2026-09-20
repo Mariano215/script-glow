@@ -104,6 +104,10 @@ module.exports = {
     icon: 'public/brand/script-glow-mark-v2.png',
     category: 'public.app-category.entertainment',
     hardenedRuntime: true,
+    // With a Mac certificate supplied, a build that cannot find its identity has to fail instead of
+    // quietly shipping an unsigned, unnotarized app (electron-builder only warns). This sits under
+    // mac, so the Windows build, which is allowed to go unsigned, is not affected.
+    forceCodeSigning: Boolean(process.env.CSC_LINK),
     entitlements: 'desktop/entitlements.mac.plist',
     entitlementsInherit: 'desktop/entitlements.mac.plist',
     extendInfo: {
