@@ -25,6 +25,8 @@ Script Glow is a single-user app that runs on your own computer. It has no accou
 
 Your script file, your settings and your self-tapes are never sent to any of them.
 
+**Continue when I stop speaking** opens the microphone while practice mode waits on your line, and reads only how loud the room is. No recording is made, nothing is written to disk and nothing leaves the browser. The microphone is closed again when you switch the setting off.
+
 ## The voice server
 
 The voice server in `voice-server/` listens on `127.0.0.1` and answers only requests addressed to this computer, so a web page cannot reach it by pointing its own domain at `127.0.0.1`.

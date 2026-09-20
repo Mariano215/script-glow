@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Continue when I stop speaking.** With **Wait for me on my line** on, Script Glow listens through your microphone and carries on once you stop, so a scene runs with no hand on the keyboard. **How long I can pause** sets how long a silence has to be, from half a second to five seconds. Space and **Continue** still work. Only the loudness of the room is read: nothing is recorded, saved or sent.
+
 ## 0.3.0 (2026-09-20)
 
 - **Built-in voices.** Kokoro-82M runs on this computer's CPU inside Script Glow: no voice server, no GPU, no key, no cost. Choose **Free voices on this computer** on the welcome screen, or **Built-in voices** in Settings. The voice files (about 360 MB) download once, resume after an interruption, and are checked before use. 28 English voices, US and UK. Hidden until the Misaki word-list provenance question is settled (hexgrad/misaki#107); set `SCRIPT_GLOW_EXPERIMENTAL_KOKORO=1` to turn them on before then.

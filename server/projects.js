@@ -33,7 +33,9 @@ function map(value, valid) {
 export function validatePreferences(value) {
   if (!object(value) || !text(value.source, 500000, true) || !text(value.name, 300) || !text(value.role, 100, true) || !text(value.sceneId, 100, true)) throw fail('Invalid project script or name.');
   if (!number(value.gap, 0, 5) || ![0.75, 1, 1.25, 1.5].includes(value.rate) || !['full', 'practice'].includes(value.mode) || ['directions', 'hide', 'follow', 'loop'].some(key => typeof value[key] !== 'boolean')) throw fail('Invalid project rehearsal settings.');
-  for (const key of ['listen', 'hint', 'wait', 'build']) if (value[key] !== undefined && typeof value[key] !== 'boolean') throw fail('Invalid project rehearsal settings.');
+  for (const key of ['listen', 'hint', 'wait', 'autoContinue', 'build']) if (value[key] !== undefined && typeof value[key] !== 'boolean') throw fail('Invalid project rehearsal settings.');
+  // How long the actor may pause before listening takes their line as finished: half second steps to 5 s.
+  if (value.holdMs !== undefined && !(Number.isInteger(value.holdMs) && number(value.holdMs, 500, 5000) && value.holdMs % 500 === 0)) throw fail('Invalid project rehearsal settings.');
   for (const key of ['loopA', 'loopB']) if (value[key] !== undefined && !text(value[key], 100, true)) throw fail('Invalid project rehearsal settings.');
   if (value.buildRepeats !== undefined && !(Number.isInteger(value.buildRepeats) && number(value.buildRepeats, 1, 10))) throw fail('Invalid project rehearsal settings.');
   if (value.tapeOverlay !== undefined && typeof value.tapeOverlay !== 'boolean') throw fail('Invalid project rehearsal settings.');
@@ -48,7 +50,7 @@ export function validatePreferences(value) {
     genders: map(value.genders ?? {}, item => ['auto', 'male', 'female', 'unknown'].includes(item)), manualVoices: map(value.manualVoices ?? {}, item => typeof item === 'boolean'),
     // Say it like: how each character's name sounds, in plain spelling (shi-VAWN). One line of text.
     sayAs: map(value.sayAs ?? {}, item => text(item, 100) && !/[\u0000-\u001f\u007f]/.test(item)),
-    sceneId: value.sceneId, gap: value.gap, directions: value.directions, hide: value.hide, listen: value.listen ?? false, hint: value.hint ?? false, wait: value.wait ?? false, build: value.build ?? false, buildRepeats: value.buildRepeats ?? 2, loopA: value.loopA ?? '', loopB: value.loopB ?? '', readerLevel: value.readerLevel ?? 1, tapeOverlay: value.tapeOverlay ?? false, tapeX: value.tapeX ?? 50, tapeY: value.tapeY ?? 78, tapeW: value.tapeW ?? 0, tapeH: value.tapeH ?? 0, follow: value.follow, loop: value.loop, rate: value.rate, mode: value.mode };
+    sceneId: value.sceneId, gap: value.gap, directions: value.directions, hide: value.hide, listen: value.listen ?? false, hint: value.hint ?? false, wait: value.wait ?? false, autoContinue: value.autoContinue ?? false, holdMs: value.holdMs ?? 500, build: value.build ?? false, buildRepeats: value.buildRepeats ?? 2, loopA: value.loopA ?? '', loopB: value.loopB ?? '', readerLevel: value.readerLevel ?? 1, tapeOverlay: value.tapeOverlay ?? false, tapeX: value.tapeX ?? 50, tapeY: value.tapeY ?? 78, tapeW: value.tapeW ?? 0, tapeH: value.tapeH ?? 0, follow: value.follow, loop: value.loop, rate: value.rate, mode: value.mode };
 }
 function keyInput(key) {
   if (!text(key, 1200000)) throw fail('Invalid render compatibility key.');
