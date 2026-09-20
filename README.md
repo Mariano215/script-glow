@@ -61,7 +61,7 @@ The Mac files are signed and notarized. The Windows installer is signed as Maria
 
 Open it and follow the welcome screen. You do not need Node or a terminal.
 
-The app keeps your projects and settings in your user folder: `~/Library/Application Support/Script Glow` on a Mac, `%APPDATA%\Script Glow` on Windows, `~/.config/Script Glow` on Linux. The key file for paid voice services stays in your user settings folder, the same one `npm start` uses: `~/.config/script-glow` on a Mac, `%APPDATA%\script-glow` on Windows.
+The app keeps your projects and settings in your user folder: `~/Library/Application Support/Script Glow` on a Mac, `%APPDATA%\Script Glow` on Windows, `~/.config/Script Glow` on Linux. The key file for paid voice services stays in your user settings folder, the same one `npm start` uses: `~/.config/script-glow` on a Mac and on Linux, `%APPDATA%\script-glow` on Windows.
 
 ### From source
 

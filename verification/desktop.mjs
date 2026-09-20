@@ -9,7 +9,11 @@ import { _electron as electron } from 'playwright';
 
 const candidates = process.platform === 'win32'
   ? ['release/win-unpacked/Script Glow.exe']
-  : ['release/mac-arm64/Script Glow.app/Contents/MacOS/Script Glow', 'release/mac/Script Glow.app/Contents/MacOS/Script Glow'];
+  : process.platform === 'linux'
+    // Both spellings: electron-builder names the Linux binary after the package, and has named it
+    // after the product before. Which one this version writes is not worth pinning the check on.
+    ? ['release/linux-unpacked/script-glow', 'release/linux-unpacked/Script Glow']
+    : ['release/mac-arm64/Script Glow.app/Contents/MacOS/Script Glow', 'release/mac/Script Glow.app/Contents/MacOS/Script Glow'];
 const executablePath = candidates.find(file => existsSync(file));
 assert.ok(executablePath, 'No packed app found. Run: npm run dist:dir');
 // Built-in voices: the worker and every package it imports sit outside app.asar, sharp is the empty
@@ -26,6 +30,10 @@ assert.deepEqual(readdirSync(path.join(unpacked, '@huggingface', 'transformers',
 const runtimes = path.join(unpacked, 'onnxruntime-node', 'bin', 'napi-v3');
 assert.deepEqual(readdirSync(runtimes), [process.platform], 'Only this system\'s onnxruntime is packed');
 assert.deepEqual(readdirSync(path.join(runtimes, process.platform)), [process.arch], 'Only this processor\'s onnxruntime is packed');
+// And not onnxruntime's GPU providers, 343 MB the package does not carry: its install script
+// downloads them on Linux x64, package.json's "allowScripts" denies it, and nothing here asks for
+// anything but the CPU provider.
+assert.deepEqual(readdirSync(path.join(runtimes, process.platform, process.arch)).filter(file => /providers_(cuda|tensorrt)/.test(file)), [], 'No onnxruntime GPU provider is packed');
 const home = mkdtempSync(path.join(os.tmpdir(), 'script-glow-desktop-'));
 const app = await electron.launch({ executablePath, env: { ...process.env, SCRIPT_GLOW_HOME: home } });
 try {

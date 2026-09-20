@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 // What ships: every installed package that is not only a development tool. package-lock.json
@@ -28,6 +28,22 @@ test('sharp is the empty stub in stubs/sharp', () => {
   // not a real installed sharp package.
   assert.equal(lock.packages['node_modules/sharp']?.link, true);
   assert.match(String(lock.packages['node_modules/sharp']?.resolved), /stubs\/sharp$/);
+});
+
+// The lockfile cannot show a file that an install script fetched after resolution, and
+// onnxruntime-node's does exactly that on Linux x64: 343 MB of NVIDIA GPU providers, under their
+// own terms, that Script Glow never asks for and THIRD_PARTY_NOTICES.md does not cover. The
+// "allowScripts" block in package.json denies that script, but a node_modules installed before it
+// keeps what it already downloaded, and desktop/builder.cjs packs what it finds.
+test('no onnxruntime GPU provider that an install script fetched is left in node_modules', () => {
+  const runtimes = new URL('../node_modules/onnxruntime-node/bin/napi-v3/', import.meta.url);
+  const found = [];
+  if (existsSync(runtimes))
+    for (const platform of readdirSync(runtimes))
+      for (const arch of readdirSync(new URL(`${platform}/`, runtimes)))
+        for (const file of readdirSync(new URL(`${platform}/${arch}/`, runtimes)))
+          if (/providers_(cuda|tensorrt)/.test(file)) found.push(`${platform}/${arch}/${file}`);
+  assert.deepEqual(found, [], 'Install this tree again so the denied script cannot leave them behind: rm -rf node_modules && npm install');
 });
 
 // A shipped package with no license field would slip past the copyleft check above, so it fails
