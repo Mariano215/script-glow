@@ -2,12 +2,11 @@
 
 ## Unreleased
 
+## 0.5.0 (2026-09-20)
+
 - **Check what I said.** With listening on, each of your lines is marked in the script as **Said**, **Half said** or **Not this line**, so you can see where you dried or jumped a line. It needs a WhisperX server address under Settings, Advanced. Your line goes there after the scene has already carried on, so the rehearsal is never held up waiting for it. Off until you switch it on, marks last only for the run, and nothing is scored or saved.
 - **The Linux download is less than half the size.** The AppImage for Intel and AMD machines was 398 MB and is now 172 MB, the same size as the ARM one. It was carrying 343 MB of NVIDIA graphics-card libraries that Script Glow never uses: a piece of the voice engine fetched them on its own while the release was built. The app itself is unchanged, there is simply far less to download. The ARM AppImage was never affected.
 - Building from source no longer lets a package run its own setup program unasked. Every one in the project is named and refused in `package.json`, and the install now stops instead of carrying on if a new one appears.
-
-## 0.4.2 (2026-09-20)
-
 - **The welcome screen has a recommended choice again.** The built-in voices are held back until a licensing question about their word lists is settled, and with them hidden the welcome screen offered three choices that each need a graphics card, an API key or a terminal. **Use a paid voice service** is now marked as the one to pick, and says that the service charges for the audio it makes. The welcome screen also has an **i** button into the guide, which every other screen already had.
 - **Make the audio** moved above the practice controls, where it belongs: none of them do anything until the audio exists. The card is named for what it does rather than for one slider inside it.
 - **First letters of hidden lines** appears with **Hide my lines** and **Listen only**, the switches it depends on, instead of sitting on its own doing nothing.
