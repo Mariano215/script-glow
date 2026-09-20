@@ -82,8 +82,9 @@ jobs:
               exit 1
             fi
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
-            # The Azure values are optional as a set: sign with all of them, build unsigned with
-            # none of them, but refuse a half-set since that is a mistake, not a choice.
+            # The Azure values are optional as a set: sign with all of them, build unsigned
+            # without them. A half-set is named in the log and in the release note, and the
+            # build goes on unsigned, because a partly set up account must not block a release.
             azure_names="AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_CERT_PROFILE AZURE_PUBLISHER_NAME"
             missing=""
             total=0
@@ -103,8 +104,9 @@ jobs:
               echo "$line"
               echo "$line" >> "$GITHUB_STEP_SUMMARY"
             else
-              echo "Error: Some Azure signing values are set but these are missing:$missing" >&2
-              exit 1
+              line="This Windows build is not signed. Windows will show a SmartScreen warning. Azure signing is only part set up, these values are missing:$missing"
+              echo "$line"
+              echo "$line" >> "$GITHUB_STEP_SUMMARY"
             fi
           fi
       - name: Check release not already published
@@ -138,8 +140,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Mac: Developer ID certificate and notarization.
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # Mac only: on Windows electron-builder would sign the installer with this Apple p12.
+          CSC_LINK: ${{ runner.os == 'macOS' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.CSC_KEY_PASSWORD || '' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
