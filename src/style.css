@@ -112,3 +112,12 @@ h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus{outline:none}
 
 /* Say it like, on each character card. */
 .say-it-like{display:flex;align-items:center;gap:8px;font-size:13px;margin-top:8px}.say-it-like input{flex:1;min-width:0;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:#fff}.say-it-like-note{display:block;color:#6b7169;font-size:12px;margin-top:2px}
+
+/* ⓘ buttons: open the user guide at the section for whatever the reader is looking at. */
+.info-button{width:22px;height:22px;flex:0 0 22px;border-radius:50%;background:var(--sage);color:#4a5a50;font-size:13px;font-weight:700;font-style:italic;line-height:1;display:inline-flex;align-items:center;justify-content:center;padding:0;vertical-align:middle}
+.info-button:hover:not(:disabled){background:var(--amber);color:var(--ink)}
+.engine-card .info-button{position:absolute;top:10px;right:10px}
+.page-heading-actions{display:flex;align-items:center;gap:10px}
+.settings-section h2{display:inline-block;margin-right:8px}
+.help-ask{margin:18px 0 0;padding:14px 16px;border-radius:8px;background:var(--sage);font-size:14px;color:#3a4a42}
+.help-ask a{font-weight:600}
