@@ -103,7 +103,10 @@ module.exports = {
   mac: {
     // onnxruntime-node carries its runtime for every system; each build keeps only its own.
     files: ['!node_modules/onnxruntime-node/bin/napi-v3/!(darwin){,/**}', '!node_modules/onnxruntime-node/bin/napi-v3/darwin/!(${arch}){,/**}'],
-    artifactName: '${productName}-${version}-${arch}.${ext}',
+    // Spelled out rather than ${productName}: the space in "Script Glow" survives into the zip's
+    // .blockmap name, GitHub turns it into a dot on upload, and electron-updater (which derives
+    // that URL by appending .blockmap to the zip URL) then 404s and downloads the whole archive.
+    artifactName: 'Script-Glow-${version}-${arch}.${ext}',
     target: [{ target: 'dmg', arch: ['arm64', 'x64'] }, { target: 'zip', arch: ['arm64', 'x64'] }],
     icon: 'public/brand/script-glow-mark-v2.png',
     category: 'public.app-category.entertainment',
@@ -124,6 +127,20 @@ module.exports = {
     target: 'nsis',
     icon: 'public/brand/script-glow-mark-v2.png',
     ...(azure ? { azureSignOptions: { endpoint: process.env.AZURE_SIGNING_ENDPOINT, codeSigningAccountName: azure, certificateProfileName: process.env.AZURE_CERT_PROFILE, publisherName: process.env.AZURE_PUBLISHER_NAME } } : {}),
+  },
+  linux: {
+    files: ['!node_modules/onnxruntime-node/bin/napi-v3/!(linux){,/**}', '!node_modules/onnxruntime-node/bin/napi-v3/linux/!(${arch}){,/**}'],
+    artifactName: 'Script-Glow-${version}-${arch}.${ext}',
+    // AppImage over .deb: one file, no package manager, runs on any distribution. Unsigned, as
+    // AppImage always is.
+    // Only the architecture of the machine doing the build. Unlike the Mac, where ensureCanvasBinding
+    // fetches the other arch's @napi-rs/canvas, a Linux runner only ever has its own: npm ci installs
+    // canvas-linux-x64-gnu on an x64 runner and the arm64 binding on an arm64 one. Naming both here
+    // would wrap the wrong native code in the other AppImage, which then dies at the voice engine.
+    // The release matrix runs ubuntu-latest and ubuntu-24.04-arm, so both are still built.
+    target: [{ target: 'AppImage', arch: [process.arch === 'arm64' ? 'arm64' : 'x64'] }],
+    icon: 'public/brand/script-glow-mark-v2.png',
+    category: 'AudioVideo',
   },
   nsis: { oneClick: true, perMachine: false },
   publish: { provider: 'github', owner: 'Mariano215', repo: 'script-glow', releaseType: 'draft' },

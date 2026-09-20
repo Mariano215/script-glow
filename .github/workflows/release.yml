@@ -12,7 +12,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        # Two Linux runners, not two architectures on one: the AppImage carries native modules
+        # (onnxruntime-node, @napi-rs/canvas) that npm ci only installs for the runner's own CPU.
+        os: [macos-latest, windows-latest, ubuntu-latest, ubuntu-24.04-arm]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     steps:
@@ -193,7 +195,8 @@ jobs:
           fi
 
           marker="### Signing"
-          section="$marker"$'\n'"The Mac files are signed and notarized."$'\n'"$windows_line"
+          linux_line="The Linux AppImage is not signed, as AppImages are not. Run chmod +x on it before you start it."
+          section="$marker"$'\n'"The Mac files are signed and notarized."$'\n'"$windows_line"$'\n'"$linux_line"
 
           body="$(gh release view "$TAG_NAME" --repo "$REPO_NAME" --json body --jq .body)"
           # A re-run writes the same marker again, so drop everything from the marker onward
