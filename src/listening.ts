@@ -8,6 +8,7 @@ const SAMPLE_MS = 20;
 let stream: MediaStream | null = null;
 let context: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
+let source: MediaStreamAudioSourceNode | null = null;
 let samples: Float32Array<ArrayBuffer> | null = null;
 let timer: ReturnType<typeof setInterval> | undefined;
 let recorder: MediaRecorder | null = null;
@@ -47,7 +48,12 @@ export async function startListening(holdMs: number, done: () => void, clip?: (w
     analyser = context.createAnalyser();
     analyser.fftSize = 1024;
     samples = new Float32Array(analyser.fftSize);
-    context.createMediaStreamSource(live).connect(analyser);
+  }
+  // A microphone unplugged and plugged back in is a new stream; the level must come from it.
+  if (source?.mediaStream !== live) {
+    source?.disconnect();
+    source = context.createMediaStreamSource(live);
+    source.connect(analyser);
   }
   if (clip) {
     const chunks: Blob[] = [];
@@ -92,5 +98,5 @@ export function releaseMicrophone(): void {
   stopListening();
   stream?.getTracks().forEach(track => track.stop());
   void context?.close();
-  stream = null; context = null; analyser = null; samples = null;
+  stream = null; context = null; analyser = null; source = null; samples = null;
 }

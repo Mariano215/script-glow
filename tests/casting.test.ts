@@ -131,3 +131,12 @@ test('more characters than voices: voices are shared, the actor voice stays with
   assert.equal(cast.JAKKI, 'Stock-Amber', 'A female character shares a female voice, not an unlabeled one');
   assert.ok(Object.entries(cast).every(([name, voice]) => voice !== 'MyVoice' || name === 'ALEX'));
 });
+
+test('a render keys only the voices heard in it', async () => {
+  const { voicesFor } = await import('../src/casting.ts');
+  const lines = [{ id: '1', character: 'BOB', text: 'Hi.', kind: 'dialogue' as const }, { id: '2', character: 'Narrator', text: 'He waves.', kind: 'direction' as const }];
+  const cast = { ZED: 'Stock-Ash', BOB: 'Stock-Granite', Narrator: 'Stock-Mica' };
+  assert.deepEqual(voicesFor(lines, cast, false), { BOB: 'Stock-Granite' });
+  assert.deepEqual(Object.keys(voicesFor(lines, cast, true)), ['BOB', 'Narrator']);
+  assert.deepEqual(voicesFor(lines, { ...cast, ZED: 'Stock-Amber' }, false), voicesFor(lines, cast, false), 'An absent character changing voice does not change the key');
+});

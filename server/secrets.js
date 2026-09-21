@@ -60,9 +60,11 @@ export function createSecrets(filename = SECRETS_FILE) {
       provider(name);
       if (!valid(key)) throw new Error('That does not look like an API key. Paste the whole key, with no spaces.');
       await change(keys => { keys[name] = key; });
+      // A record that a key changed, never the key itself.
+      console.log(`Key saved for ${name}.`);
       return { provider: name, configured: true, hint: hint(key) };
     },
-    async remove(name) { provider(name); await change(keys => { delete keys[name]; }); return { provider: name, configured: false }; },
+    async remove(name) { provider(name); await change(keys => { delete keys[name]; }); console.log(`Key removed for ${name}.`); return { provider: name, configured: false }; },
     // Server side only. Never put this in a reply.
     async get(name) { const key = (await read())[provider(name)]; return valid(key) ? key : ''; },
   };

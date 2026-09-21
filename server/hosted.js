@@ -130,7 +130,8 @@ function explain(label, error, said = '') {
   const status = Number(/HTTP (\d{3})/.exec(error?.message ?? '')?.[1]);
   const reason = said ? ` ${label} said: "${said}"` : '';
   if (status === 401 || status === 403) return `${label} refused the key. Check it in Settings, under Keys for paid services.${reason}`;
-  if (status === 402 || status === 429) return `${label} said no more requests for now: the account may be out of credit, or over its rate limit.${reason}`;
+  if (status === 402) return `${label} said the account is out of credit. Add credit on their site, then try again.${reason}`;
+  if (status === 429) return `${label} said too many requests. Wait a minute, then try again.${reason}`;
   if (status === 400 || status === 404 || status === 422) return `${label} rejected the request (HTTP ${status}).${reason || ' Check the model name in Settings.'}`;
   if (error?.name === 'TimeoutError') return `${label} did not answer in time.`;
   if (status) return `${label} had a problem (HTTP ${status}). Try again in a minute.${reason}`;

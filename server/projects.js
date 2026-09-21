@@ -6,6 +6,7 @@ import { mkdir, readFile, readdir, lstat, open, copyFile, unlink, rmdir } from '
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { makeMp4 } from './video.js';
+import { DIGEST, renderDigest } from './render-key.js';
 import { renameRetry } from './connections.js';
 
 export const PROJECT_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -52,13 +53,20 @@ export function validatePreferences(value) {
     sayAs: map(value.sayAs ?? {}, item => text(item, 100) && !/[\u0000-\u001f\u007f]/.test(item)),
     sceneId: value.sceneId, gap: value.gap, directions: value.directions, hide: value.hide, listen: value.listen ?? false, hint: value.hint ?? false, wait: value.wait ?? false, autoContinue: value.autoContinue ?? false, holdMs: value.holdMs ?? 500, checkLines: value.checkLines ?? false, build: value.build ?? false, buildRepeats: value.buildRepeats ?? 2, loopA: value.loopA ?? '', loopB: value.loopB ?? '', readerLevel: value.readerLevel ?? 1, tapeOverlay: value.tapeOverlay ?? false, tapeX: value.tapeX ?? 50, tapeY: value.tapeY ?? 78, tapeW: value.tapeW ?? 0, tapeH: value.tapeH ?? 0, follow: value.follow, loop: value.loop, rate: value.rate, mode: value.mode };
 }
+// Keys saved before digests were the whole render input as JSON. They are still read, so older audio plays.
+// A full script saved before scopes existed has no scope, so its id says what it is.
 function keyInput(key) {
   if (!text(key, 1200000)) throw fail('Invalid render compatibility key.');
   let value; try { value = JSON.parse(key); } catch { throw fail('Invalid render compatibility key.'); }
-  if (!object(value) || !object(value.scene) || !Array.isArray(value.scene.lines) || value.scene.lines.length > 5000 || !object(value.voices)) throw fail('Invalid render compatibility key.');
-  return { scene: value.scene, voices: value.voices, myCharacter: value.myCharacter, gapSeconds: value.gapSeconds, includeDirections: value.includeDirections, scope: value.scope ?? 'scene' };
+  const scope = value?.scope ?? (value?.scene?.id === 'full-script' ? 'script' : 'scene');
+  if (!object(value) || !object(value.scene) || !Array.isArray(value.scene.lines) || value.scene.lines.length > (scope === 'script' ? 5000 : 300) || !object(value.voices)) throw fail('Invalid render compatibility key.');
+  return { scene: value.scene, voices: value.voices, myCharacter: value.myCharacter, gapSeconds: value.gapSeconds, includeDirections: value.includeDirections, scope };
 }
 export function validateRenderKey(key, input) {
+  if (typeof key === 'string' && DIGEST.test(key)) {
+    if (input && key !== renderDigest(input)) throw fail('Render compatibility key does not match the render request.');
+    return key;
+  }
   const keyed = keyInput(key);
   if (input && !isDeepStrictEqual(keyed, { scene: input.scene, voices: input.voices, myCharacter: input.myCharacter, gapSeconds: input.gapSeconds, includeDirections: input.includeDirections, scope: input.scope ?? 'scene' })) throw fail('Render compatibility key does not match the requested scene.');
   return key;
@@ -87,7 +95,7 @@ function validateManifest(value, expectedId) {
   const keys = new Set();
   return { version: 1, id: value.id, revision: value.revision, createdAt: value.createdAt, updatedAt: value.updatedAt, preferences: validatePreferences(value.preferences), renders: value.renders.map(entry => {
     validateRenderKey(entry?.key); if (keys.has(entry.key)) throw fail('Duplicate render key.'); keys.add(entry.key);
-    const result = validateResult(entry.result); audioNames(value.id, result); return { key: entry.key, result };
+    const result = validateResult(entry.result); audioNames(value.id, result); return { key: entry.key, ...(text(entry.title, 300) ? { title: entry.title } : {}), result };
   }) };
 }
 async function regular(filename) { const info = await lstat(filename); if (!info.isFile() || info.isSymbolicLink()) throw fail('Expected an ordinary project file.', 422); return info; }
@@ -121,7 +129,9 @@ async function atomicJSON(filename, value, preserve = false) {
 // metadata budget well below MAX_META; autosave must never hit the manifest limit.
 export function createProjectStore(root, cacheDir, { maxRenders = 200, renderBudget = 16 * 1024 * 1024 } = {}) {
   root = path.resolve(root); cacheDir = path.resolve(cacheDir);
-  const locks = new Map(); let restoring = false, exporting = 0;
+  const locks = new Map(); let restoring = false;
+  // Projects whose backup is being streamed. Only their audio must stay put until it is sent.
+  const exporting = [];
   async function locked(key, fn) {
     const previous = locks.get(key) ?? Promise.resolve(); const next = previous.catch(() => {}).then(fn); locks.set(key, next);
     try { return await next; } finally { if (locks.get(key) === next) locks.delete(key); }
@@ -141,7 +151,7 @@ export function createProjectStore(root, cacheDir, { maxRenders = 200, renderBud
     const warnings = [...(document.warnings ?? [])]; const renders = [];
     for (const entry of document.renders) {
       try { for (const name of audioNames(document.id, entry.result)) await wavInfo(path.join(directory(document.id), name), entry.result.duration); renders.push(entry); }
-      catch { warnings.push(`Saved audio is missing or invalid for ${keyInput(entry.key).scene.title || 'a scene'}. Render that scene again.`); }
+      catch { warnings.push(`Saved audio is missing or invalid for ${entry.title || (DIGEST.test(entry.key) ? '' : keyInput(entry.key).scene.title) || 'a scene'}. Render that scene again.`); }
     }
     const { version, ...result } = document;
     return { ...result, renders, ...(warnings.length ? { warnings: [...new Set(warnings)] } : {}) };
@@ -166,7 +176,9 @@ export function createProjectStore(root, cacheDir, { maxRenders = 200, renderBud
     await ensureRoot(); const names = (await readdir(root)).filter(name => PROJECT_ID.test(name));
     if (names.length > 1000) throw fail('Project library exceeds 1,000 projects. No files were removed.', 409);
     const projects = [], warnings = [];
-    for (const name of names) { try { const value = await get(name); projects.push({ id: name, name: value.preferences.name, updatedAt: value.updatedAt, renderCount: value.renders.length }); warnings.push(...(value.warnings ?? [])); } catch (error) { warnings.push(error.message); } }
+    // The listing reads each manifest only. Checking every saved WAV is left to opening the project,
+    // so a large library lists quickly.
+    for (const name of names) { try { const value = await locked(id(name), () => read(name)); projects.push({ id: name, name: value.preferences.name, updatedAt: value.updatedAt, renderCount: value.renders.length }); warnings.push(...(value.warnings ?? [])); } catch (error) { warnings.push(error.message); } }
     projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)); return { projects, ...(warnings.length ? { warnings: [...new Set(warnings)] } : {}) };
   }
   async function update(project, body) {
@@ -178,7 +190,7 @@ export function createProjectStore(root, cacheDir, { maxRenders = 200, renderBud
       await atomicJSON(path.join(directory(project), 'project.json'), document, !current.warnings); return publicDocument(document);
     });
   }
-  async function attach(project, key, value, cancelled = () => false, replace = false) {
+  async function attach(project, key, value, cancelled = () => false, replace = false, title = '') {
     validateRenderKey(key); const result = validateResult(value);
     const names = ['full', 'practice'].map(mode => { const url = result[`${mode}Url`]; if (typeof url !== 'string' || !url.startsWith('/audio/')) throw fail('Only completed local cache renders can be attached.'); const name = url.slice(7); if (!AUDIO_NAME.test(name) || !name.endsWith(`-${mode}.wav`)) throw fail('Invalid local render audio URL.'); return name; });
     if (names[0].slice(0, 36) !== names[1].slice(0, 36)) throw fail('Render audio must be a matching full/practice pair.');
@@ -199,7 +211,7 @@ export function createProjectStore(root, cacheDir, { maxRenders = 200, renderBud
           await wavInfo(target, result.duration);
         }
         if (cancelled()) throw fail('Render cancelled.', 409);
-        const entry = { key, result: { ...result, fullUrl: `/api/projects/${project}/audio/${targetNames[0]}`, practiceUrl: `/api/projects/${project}/audio/${targetNames[1]}` } };
+        const entry = { key, ...(text(title, 300) ? { title } : {}), result: { ...result, fullUrl: `/api/projects/${project}/audio/${targetNames[0]}`, practiceUrl: `/api/projects/${project}/audio/${targetNames[1]}` } };
         const previousRenders = document.renders;
         document.renders = [...document.renders.filter(item => item.key !== key), entry]; document.updatedAt = new Date().toISOString();
         let size = Buffer.byteLength(JSON.stringify(document.renders));
@@ -209,7 +221,7 @@ export function createProjectStore(root, cacheDir, { maxRenders = 200, renderBud
         // Keep audio referenced by the new manifest or the recovery copy; remove the rest.
         const kept = new Set([...previousRenders, ...document.renders].flatMap(item => audioNames(project, item.result)));
         // An export streams outside the lock; skip cleanup while one runs (the next render cleans up).
-        if (!exporting) for (const name of await readdir(directory(project))) if (AUDIO_NAME.test(name) && !kept.has(name)) await unlink(path.join(directory(project), name)).catch(() => {});
+        if (!exporting.includes(project)) for (const name of await readdir(directory(project))) if (AUDIO_NAME.test(name) && !kept.has(name)) await unlink(path.join(directory(project), name)).catch(() => {});
         return entry;
       } finally { for (const filename of owned) await unlink(filename).catch(() => {}); }
     });
@@ -236,8 +248,8 @@ export function createProjectStore(root, cacheDir, { maxRenders = 200, renderBud
     return { bytes };
   }
   async function backup(project, response) {
-    if (exporting >= 2) throw fail('Two project exports are already running. Try again shortly.', 429);
-    exporting++;
+    if (exporting.length >= 2) throw fail('Two project exports are already running. Try again shortly.', 429);
+    exporting.push(project);
     try {
       const document = await locked(id(project), () => read(project)); delete document.warnings;
       const names = [...new Set(document.renders.flatMap(entry => audioNames(project, entry.result)))]; const files = [];
@@ -262,7 +274,7 @@ export function createProjectStore(root, cacheDir, { maxRenders = 200, renderBud
       await write(header); await write(metadata);
       for (const file of files) for await (const chunk of createReadStream(path.join(directory(project), file.name))) await write(chunk);
       response.end();
-    } finally { exporting--; }
+    } finally { exporting.splice(exporting.indexOf(project), 1); }
   }
   async function restore(request) {
     if (restoring) throw fail('A project restore is already running.', 429);
@@ -416,7 +428,7 @@ export function createProjectStore(root, cacheDir, { maxRenders = 200, renderBud
   // by moving the folder back. Nothing is erased.
   async function remove(project) {
     return locked('$library', () => locked(id(project), async () => {
-      if (exporting || restoring) throw fail('A backup is being made or restored. Try again when it finishes.', 409);
+      if (exporting.includes(project) || restoring) throw fail('A backup is being made or restored. Try again when it finishes.', 409);
       await read(project);
       const bin = path.join(root, '.trash');
       await mkdir(bin, { recursive: true });

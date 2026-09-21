@@ -10,6 +10,8 @@ export const DEFAULT_CONNECTIONS = Object.freeze({
   voice: { engine: 'chatterbox', model: '' },
   // Which model guesses voice types from names. Ollama is local; the others are hosted.
   names: { engine: 'ollama', model: '' },
+  // legacyCache is still accepted so older files load, but it does nothing: that cache had no server in
+  // its key, so audio from one Chatterbox could be played for another.
   chatterbox: { url: 'http://127.0.0.1:8095', cacheNamespace: 'local-chatterbox', legacyCache: false },
   whisperx: { url: 'http://127.0.0.1:8010' },
   ollama: { url: 'http://127.0.0.1:11434', model: '' },

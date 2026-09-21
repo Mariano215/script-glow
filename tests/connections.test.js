@@ -139,7 +139,7 @@ test('configured URLs/model are injected, public profile is read-only and privat
   });
 }));
 
-test('legacy line cache remains byte-compatible while new profiles isolate URL and namespace', async () => temporary(async dir => {
+test('the old line cache is never reused, and profiles isolate URL and namespace', async () => temporary(async dir => {
   const cacheDir = path.join(dir, 'cache'); await mkdir(path.join(cacheDir, 'lines'), { recursive: true });
   const oldKey = createHash('sha256').update(JSON.stringify({ version: 1, text: 'Hello.', voice: 'TestVoice' })).digest('hex');
   const oldFile = path.join(cacheDir, 'lines', `${oldKey}.wav`); await writeFile(oldFile, wav);
@@ -150,7 +150,7 @@ test('legacy line cache remains byte-compatible while new profiles isolate URL a
   };
   const value = profile(); value.chatterbox.legacyCache = true;
   await withServer({ cacheDir, connections: value, serviceFetch }, render);
-  assert.equal(ttsCalls, 0, 'legacy entry reused');
+  assert.equal(ttsCalls, 1, 'An entry keyed without its server is not reused, even with legacyCache on');
   value.chatterbox.legacyCache = false;
   await withServer({ cacheDir, connections: value, serviceFetch }, async base => { await render(base); await render(base); });
   assert.equal(ttsCalls, 1, 'new namespace reused only its own entry');
@@ -161,3 +161,10 @@ test('legacy line cache remains byte-compatible while new profiles isolate URL a
   assert.equal((await readdir(path.join(cacheDir, 'lines'))).length, 4);
   assert.deepEqual(await readFile(oldFile), wav);
 }));
+
+test('the example settings file shows every section and is accepted as it is', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const example = JSON.parse(await readFile(new URL('../connections.example.json', import.meta.url), 'utf8'));
+  assert.deepEqual(Object.keys(example).sort(), Object.keys(DEFAULT_CONNECTIONS).sort());
+  assert.deepEqual(validateConnections(example), example);
+});

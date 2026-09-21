@@ -10,10 +10,10 @@ const os = require('node:os');
 const { notShipped } = require('../scripts/not-shipped.cjs');
 
 const ROOT = path.join(__dirname, '..');
-// Windows signing needs all four Azure values. With only some of them electron-builder would
-// call Trusted Signing with an empty certificate profile and fail the build, so a part-filled
-// set builds unsigned instead.
-const azureValues = ['AZURE_SIGNING_ENDPOINT', 'AZURE_SIGNING_ACCOUNT', 'AZURE_CERT_PROFILE', 'AZURE_PUBLISHER_NAME'].map(name => process.env[name]);
+// Windows signing needs all seven Azure values, the same set the release workflow checks. With only
+// some of them electron-builder would call Trusted Signing without credentials or a profile and fail
+// the build, so a part-filled set builds unsigned instead.
+const azureValues = ['AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET', 'AZURE_SIGNING_ENDPOINT', 'AZURE_SIGNING_ACCOUNT', 'AZURE_CERT_PROFILE', 'AZURE_PUBLISHER_NAME'].map(name => process.env[name]);
 const azure = azureValues.every(Boolean) ? process.env.AZURE_SIGNING_ACCOUNT : '';
 
 // node_modules/@napi-rs only ever holds the binding for the machine that ran `npm install`

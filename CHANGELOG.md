@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Changing one character's voice no longer marks other scenes as needing new audio.** A scene's audio now depends only on the voices heard in it.
+- **Saved audio uses a short key.** Each render was saved under its whole script text, up to 1.2 MB for a full script, which pushed older audio out of a project. Audio made before this change still plays.
+- **The old Chatterbox cache option is gone.** "Reuse audio made by an older Script Glow" could play audio made by one voice server for another. Lines are voiced again once.
+- **Listening works again after the microphone is unplugged and plugged back in.**
+- The project list opens faster: it no longer checks every audio file of every project.
+- Files left half written by a crash are removed the next time the app starts.
+- The desktop app's update check is now listed in the privacy notes. The security notes also say that other programs on the computer can reach the app.
+- Clearer messages for a paid service that is out of credit or rate limited, and for a bad `PORT` or settings file at start.
+
 - **See who is in the scene.** A row under the scene title lists every character who speaks in the scene, the picked scenes, or the full script, in the order they first speak. Your role is marked.
 - MP3 downloads no longer leave a partial file behind when FFmpeg fails, and at most two are made at a time.
 
