@@ -722,6 +722,9 @@ function finishRenderUI() {
   if (several) document.querySelector('.script-toolbar > div')!.textContent = whole ? `FULL SCRIPT · ${parsed.scenes.length} SCENES` : current!.title.toUpperCase();
   const scroll = document.createElement('div'); scroll.className = 'script-paper-scroll'; paper.before(scroll); scroll.append(paper);
   scroll.insertAdjacentHTML('beforebegin', `<div class="reading-controls"><label><input type="checkbox" id="follow-playback" ${prefs.follow ? 'checked' : ''}> Auto-follow spoken line</label><span class="reading-legend"><i style="background:${safeColor(prefs.spokenColor, highlightDefaults.spokenColor)}"></i> Line playing now ${prefs.highlightCharacter ? `<i style="background:${safeColor(prefs.characterColor, highlightDefaults.characterColor)}"></i> ${prefs.highlightCharacter === '@role' ? 'Your lines' : `${esc(pretty(prefs.highlightCharacter))}'s lines`}` : ''}</span></div>`);
+  // Who speaks in what is selected, in order of their first line, so the actor knows who is in it.
+  const speakers = [...new Set((current?.lines ?? []).filter(line => line.kind === 'dialogue').map(line => line.character))];
+  if (speakers.length) document.querySelector('.script-toolbar')!.insertAdjacentHTML('afterend', `<div class="scene-cast" aria-label="Characters speaking"><span>${whole ? 'IN THE SCRIPT' : several ? 'IN THESE SCENES' : 'IN THIS SCENE'} · ${speakers.length}</span>${speakers.map(name => `<b class="${name === prefs.role ? 'is-you' : ''}">${esc(pretty(name))}${name === prefs.role ? ' · you' : ''}</b>`).join('')}</div>`);
   paper.querySelectorAll('.character-label span').forEach(element => element.remove());
   if (several) paper.querySelector(':scope > h2')?.remove();
   placeParentheticals(paper, current?.lines || []);

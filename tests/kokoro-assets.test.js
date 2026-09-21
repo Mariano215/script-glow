@@ -189,3 +189,14 @@ test('the shipped manifest lists all 42 files, hashed, from the pinned release',
     assert.ok(MANIFEST.files.some(file => file.path === needed), needed);
   for (const source of ['kokoro', 'misaki', 'bart_us', 'bart_gb']) assert.match(MANIFEST.sources[source].revision, /^[a-f0-9]{40}$/, source);
 });
+
+test('a download asked for during removal starts after the files are gone', async t => {
+  const { manifest, dir } = await release(t);
+  const download = createDownloader({ dir, manifest });
+  await download.start();
+  const removed = download.remove();
+  const again = download.start();
+  await removed; await again;
+  assert.equal(download.state().status, 'ready', 'Removal finishing does not reset the new download to idle');
+  assert.equal(await assetsReady(dir, manifest), true, 'The new download is complete, not half deleted');
+});

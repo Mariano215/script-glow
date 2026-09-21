@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **See who is in the scene.** A row under the scene title lists every character who speaks in the scene, the picked scenes, or the full script, in the order they first speak. Your role is marked.
+- MP3 downloads no longer leave a partial file behind when FFmpeg fails, and at most two are made at a time.
+
 - **Any voice for any character.** The voice list no longer blocks voices another character already uses, so a cast larger than the voice list can still be set by hand. Your own voice stays with your chosen role. When no unused voice of the right type is left, automatic casting shares one of that type instead of switching to an unlabeled voice.
 
 - **Run several scenes as one.** Click a scene, then Shift-click another to pick every scene between them. Cmd-click (Ctrl on Windows and Linux) adds or removes one scene. The picked scenes play in script order, and **Make audio** makes one track for all of them.
