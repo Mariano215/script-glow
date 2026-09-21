@@ -11,10 +11,11 @@ import { parseScript, sayItLike, sceneIncludes, spokenLines, SAMPLE, type Scene,
 import { buildEnd, buildNext, buildTargets, cueAt, cueRate, firstLetters, lineMatch, loopRange, shouldWait, stepCue, type Cue, type LineVerdict } from './playback';
 import { releaseMicrophone, startListening, stopListening } from './listening';
 import { browserMp4, browserMp4Type, castingFileName, castingFit, countBeep, monoWav, setReaderLevel, mixerState, openRecorder, resumeMixer, takeClock, takeContainer, takeLabel, takeNeedsConverting, type Take, type TakeRecorder } from './selftape';
-import { inferCharacters, assignCast, resolvedGender, voiceGenders, voiceIdentity, voiceOwners, validGuesses, withNameGuesses, type NameGuesses, type GenderChoice } from './casting';
+import { inferCharacters, assignCast, resolvedGender, voiceGenders, voiceIdentity, voiceOwners, voicesFor, validGuesses, withNameGuesses, type NameGuesses, type GenderChoice } from './casting';
 import { voiceCatalog } from './voice-catalog';
 import { openHelp } from './help';
 import { parseServerHost } from './server-address';
+import { renderDigest } from '../server/render-key.js';
 
 interface RenderResult { fullUrl: string; practiceUrl: string; duration: number; cues: Cue[] }
 interface Job { id: string; status: 'queued' | 'running' | 'complete' | 'error'; completed: number; total: number; error?: string; result?: RenderResult }
@@ -30,18 +31,20 @@ const defaults: Preferences = { ...highlightDefaults, source: SAMPLE, name: 'The
 // Nought means "whatever the stylesheet says". Anything else is the size the actor dragged to.
 const tapeSize = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.min(2000, Math.round(value)) : 0;
 const tapePercent = (value: unknown, fallback: number) => typeof value === 'number' && Number.isFinite(value) ? Math.min(98, Math.max(2, value)) : fallback;
+// Every saved copy goes through here: the browser draft, a project from disk, a recovered draft.
+// The server accepts wider ranges than the controls offer, so values are brought back into them.
+function sanitized(saved: Partial<Preferences>): Preferences {
+  const text = (value: unknown, fallback: string) => typeof value === 'string' ? value : fallback;
+  const record = (value: unknown, valid: (item: unknown) => boolean) => value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).filter(([, item]) => valid(item))) : {};
+  return { ...defaults, ...saved, ...readHighlights(saved), guesses: validGuesses(saved.guesses),
+    name: text(saved.name, defaults.name), role: text(saved.role, defaults.role), sceneId: text(saved.sceneId, defaults.sceneId), mode: saved.mode === 'practice' ? 'practice' : 'full',
+    genders: record(saved.genders, item => ['auto', 'male', 'female', 'unknown'].includes(item as string)) as Record<string, GenderChoice>,
+    manualVoices: record(saved.manualVoices, item => typeof item === 'boolean') as Record<string, boolean>,
+    sayAs: record(saved.sayAs, item => typeof item === 'string') as Record<string, string>,
+    directions: saved.directions === true, follow: saved.follow !== false, loop: saved.loop === true, source: typeof saved.source === 'string' ? saved.source : SAMPLE, cast: record(saved.cast, item => typeof item === 'string') as Record<string, string>, hide: saved.hide === true, listen: saved.listen === true, hint: saved.hint === true, wait: saved.wait === true, autoContinue: saved.autoContinue === true, holdMs: HOLDS.includes(Number(saved.holdMs)) ? Number(saved.holdMs) : 500, checkLines: saved.checkLines === true, build: saved.build === true, buildRepeats: [1, 2, 3, 4, 5].includes(Number(saved.buildRepeats)) ? Number(saved.buildRepeats) : 2, loopA: typeof saved.loopA === 'string' ? saved.loopA : '', loopB: typeof saved.loopB === 'string' ? saved.loopB : '', tapeOverlay: saved.tapeOverlay === true, readerLevel: typeof saved.readerLevel === 'number' && Number.isFinite(saved.readerLevel) ? Math.min(1.5, Math.max(0, saved.readerLevel)) : 1, tapeX: tapePercent(saved.tapeX, 50), tapeY: tapePercent(saved.tapeY, 78), tapeW: tapeSize(saved.tapeW), tapeH: tapeSize(saved.tapeH), gap: Math.min(5, Math.max(0, Number(saved.gap ?? 1))), rate: [0.75, 1, 1.25, 1.5].includes(Number(saved.rate)) ? Number(saved.rate) : 1 };
+}
 function restored(): Preferences {
-  try {
-    const saved = JSON.parse(localStorage.getItem('script-glow:v1') || '{}') as Partial<Preferences>;
-    const text = (value: unknown, fallback: string) => typeof value === 'string' ? value : fallback;
-    const record = (value: unknown, valid: (item: unknown) => boolean) => value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).filter(([, item]) => valid(item))) : {};
-    return { ...defaults, ...saved, ...readHighlights(saved), guesses: validGuesses(saved.guesses),
-      name: text(saved.name, defaults.name), role: text(saved.role, defaults.role), sceneId: text(saved.sceneId, defaults.sceneId), mode: saved.mode === 'practice' ? 'practice' : 'full',
-      genders: record(saved.genders, item => ['auto', 'male', 'female', 'unknown'].includes(item as string)) as Record<string, GenderChoice>,
-      manualVoices: record(saved.manualVoices, item => typeof item === 'boolean') as Record<string, boolean>,
-      sayAs: record(saved.sayAs, item => typeof item === 'string') as Record<string, string>,
-      directions: saved.directions === true, follow: saved.follow !== false, loop: saved.loop === true, source: typeof saved.source === 'string' ? saved.source : SAMPLE, cast: record(saved.cast, item => typeof item === 'string') as Record<string, string>, hide: saved.hide === true, listen: saved.listen === true, hint: saved.hint === true, wait: saved.wait === true, autoContinue: saved.autoContinue === true, holdMs: HOLDS.includes(Number(saved.holdMs)) ? Number(saved.holdMs) : 500, checkLines: saved.checkLines === true, build: saved.build === true, buildRepeats: [1, 2, 3, 4, 5].includes(Number(saved.buildRepeats)) ? Number(saved.buildRepeats) : 2, loopA: typeof saved.loopA === 'string' ? saved.loopA : '', loopB: typeof saved.loopB === 'string' ? saved.loopB : '', tapeOverlay: saved.tapeOverlay === true, readerLevel: typeof saved.readerLevel === 'number' && Number.isFinite(saved.readerLevel) ? Math.min(1.5, Math.max(0, saved.readerLevel)) : 1, tapeX: tapePercent(saved.tapeX, 50), tapeY: tapePercent(saved.tapeY, 78), tapeW: tapeSize(saved.tapeW), tapeH: tapeSize(saved.tapeH), gap: Math.min(5, Math.max(0, Number(saved.gap ?? 1))), rate: [0.75, 1, 1.25, 1.5].includes(Number(saved.rate)) ? Number(saved.rate) : 1 };
-  } catch { return { ...defaults }; }
+  try { return sanitized(JSON.parse(localStorage.getItem('script-glow:v1') || '{}') as Partial<Preferences>); } catch { return { ...defaults }; }
 }
 let prefs = restored();
 let parsed = parseScript(prefs.source);
@@ -97,6 +100,8 @@ function kokoroPanel(off: string) {
   if (kokoro.status === 'downloading') return `<div class="kokoro-panel"><label for="kokoro-progress">Downloading the built-in voices, about ${kokoroMB()} MB · <span data-kokoro-percent>${kokoroPercent()}%</span></label><progress id="kokoro-progress" data-kokoro-progress max="${kokoro.total || 1}" value="${kokoro.received}"></progress><p class="library-note">You can set up the cast meanwhile. Making audio waits until the download is done.</p></div>`;
   return `<div class="kokoro-panel">${kokoro.error ? `<p class="callout is-warn" role="alert">${esc(kokoro.error)}</p>` : ''}<button type="button" class="button primary" data-action="kokoro-download" ${off}>${kokoro.error ? 'Try again' : `Download the voices (about ${kokoroMB()} MB)`}</button><p class="library-note">A one-time download. After that the voices work without an internet connection.</p></div>`;
 }
+// Gemini gets each line after this instruction (see server/hosted.js), so it counts toward what is sent.
+const GEMINI_PREFIX = 'Read this line aloud exactly as written: ';
 const engineName = () => PROVIDERS[voiceEngine]?.label ?? 'Chatterbox';
 let castingConfig = { preferredActorVoice: '', aliases: {} as Record<string, string>, previewUrl: '' };
 let profileReady = false;
@@ -177,7 +182,7 @@ let cacheSource = prefs.source;
 function isRenderResult(value: unknown): value is RenderResult {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<RenderResult>;
-  const localAudio = (url: unknown) => typeof url === 'string' && /^(?:\/audio|\/api\/projects\/[a-f0-9-]{36}\/audio)\/[a-zA-Z0-9-]+-(full|practice)\.wav$/.test(url);
+  const localAudio = (url: unknown) => typeof url === 'string' && /^(?:\/audio|\/api\/projects\/[a-f0-9-]{36}\/audio)\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-(full|practice)\.wav$/.test(url);
   if (!localAudio(candidate.fullUrl) || !localAudio(candidate.practiceUrl) || typeof candidate.duration !== 'number' || !Number.isFinite(candidate.duration) || candidate.duration <= 0 || candidate.duration > 86400 || !Array.isArray(candidate.cues) || candidate.cues.length > 5000) return false;
   const duration = candidate.duration;
   return candidate.cues.every((value: unknown) => {
@@ -339,7 +344,7 @@ async function refreshProjectList() {
 }
 function adoptProject(document: ProjectDocument) {
   libraryReady = false;
-  prefs = { ...defaults, ...document.preferences, ...readHighlights(document.preferences), guesses: validGuesses(document.preferences.guesses) };
+  prefs = sanitized(document.preferences);
   projectId = document.id; projectRevision = document.revision; lastSynced = JSON.stringify(prefs);
   // Takes belong to one project: drop the old list, release the camera, and read the new one.
   takes = []; reviewing = ''; takeNotice = ''; takeError = false; void closeCamera(); void loadTakes().then(render);
@@ -378,7 +383,7 @@ async function openLibrary() {
       adoptProject(saved);
       if (missing) { notice = `${missing} old cached render(s) could not be found. Your script is saved; make the audio for those scenes again.`; noticeError = true; }
       if (pending) {
-        prefs = { ...defaults, ...marker.preferences, guesses: validGuesses(marker.preferences.guesses) };
+        prefs = sanitized(marker.preferences);
         parsed = parseScript(prefs.source); castDefaults(); invalidate(true);
         if (marker.revision !== saved.revision) { saveConflict = true; saveError = 'Another tab changed this project. Save your recovered draft as a new project.'; }
       }
@@ -465,22 +470,23 @@ function pickScenes(id: string, range: boolean) {
 const formatKey = 'script-glow:audio-format';
 const audioFormat = () => { try { return tools.ffmpeg && localStorage.getItem(formatKey) === 'mp3' ? 'mp3' : 'wav'; } catch { return 'wav'; } };
 const saveUrl = (url: string) => audioFormat() === 'mp3' ? `${url}?mp3` : url;
-function renderInputs(current: Scene, spoken = true) {
+// wholeCast gives the key audio was saved under before it was limited to the characters heard.
+function renderInputs(current: Scene, spoken = true, wholeCast = false) {
   // What the engine is asked to say, not what the page shows: parentheticals are notes.
   // Say it like respellings are part of what is sent, so they are part of the render key too.
   if (spoken) current = { ...current, lines: sayItLike(spokenLines(current.lines), prefs.sayAs) };
-  return { scene: current, ...(current.id === 'full-script' || current.id.startsWith(PICKED) ? { scope: 'script' } : {}), voices: Object.fromEntries(Object.entries(prefs.cast).sort(([a], [b]) => a.localeCompare(b))), myCharacter: prefs.role, gapSeconds: prefs.gap, includeDirections: prefs.directions };
+  return { scene: current, ...(current.id === 'full-script' || current.id.startsWith(PICKED) ? { scope: 'script' } : {}), voices: wholeCast ? Object.fromEntries(Object.entries(prefs.cast).sort(([a], [b]) => a.localeCompare(b))) : voicesFor(current.lines, prefs.cast, prefs.directions), myCharacter: prefs.role, gapSeconds: prefs.gap, includeDirections: prefs.directions };
 }
 // Audio made before parentheticals were silenced is keyed by the text as it was written.
 // It still plays; only a fresh render uses the new text. Nobody loses a rendered scene to an
 // upgrade, and nobody has to wait for a GPU to hear a scene they already made.
 function cachedRender(current: Scene): { result: RenderResult; key: string; legacy: boolean } | null {
-  const key = JSON.stringify(renderInputs(current));
-  const found = completedScenes.get(key);
-  if (found) return { result: found, key, legacy: false };
-  const legacyKey = JSON.stringify(renderInputs(current, false));
-  const older = legacyKey === key ? undefined : completedScenes.get(legacyKey);
-  return older ? { result: older, key: legacyKey, legacy: true } : null;
+  // Newest key first; audio saved under an older key still plays.
+  for (const [key, legacy] of [[renderDigest(renderInputs(current)), false], [JSON.stringify(renderInputs(current, true, true)), false], [JSON.stringify(renderInputs(current, false, true)), true]] as const) {
+    const found = completedScenes.get(key);
+    if (found) return { result: found, key, legacy };
+  }
+  return null;
 }
 function busy() { return job?.status === 'queued' || job?.status === 'running'; }
 // Switching scope or saving the script cancels the running job, so ask first.
@@ -514,11 +520,12 @@ async function guessNames() {
   aiLoading = true; aiMessage = 'The AI is guessing voice types from names… You can keep reading and choosing voices.'; render();
   let succeeded = false;
   try {
-    const response = await api<{ guesses: { name: string; gender: string }[] }>('/api/casting/guess-genders', { method: 'POST', body: JSON.stringify({ names }), signal: AbortSignal.timeout(130000) });
+    const response = await api<{ guesses: { name: string; gender: string }[]; flagged?: boolean }>('/api/casting/guess-genders', { method: 'POST', body: JSON.stringify({ names }), signal: AbortSignal.timeout(130000) });
     if (source !== prefs.source || epoch !== aiEpoch) return;
     if (!Array.isArray(response.guesses) || response.guesses.length !== names.length || new Set(response.guesses.map(item => item?.name)).size !== names.length || response.guesses.some(item => !item || !names.includes(item.name) || !['female', 'male', 'unknown'].includes(item.gender))) throw new Error('The AI returned invalid guesses. Retry or choose voice types manually.');
     stagedGuesses = { ...stagedGuesses, ...validGuesses(Object.fromEntries(response.guesses.map(item => [item.name, item.gender]))) };
     aiMessage = 'AI name guesses are suggestions, not facts. Script cues and your choices take priority.';
+    if (response.flagged) aiMessage += ' Some character names read like instructions to the AI, so check those guesses.';
     if (!result && !busy()) applyGuesses();
     else aiMessage += ' Apply suggestions to update automatic casting; changed voices need the audio made again.';
     succeeded = true;
@@ -539,6 +546,8 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, { signal: AbortSignal.timeout(60000), ...options, headers: { 'Content-Type': 'application/json', ...sessionHeader(), ...options?.headers } });
   // A proxy or a crash can answer with a page instead of JSON; say that plainly.
   const body: unknown = await response.json().catch(() => ({ error: `The local server sent an unexpected reply (${response.status}). Check the terminal.` }));
+  // The page shows a short sentence; the console keeps which request failed, for a bug report.
+  if (!response.ok) console.error(`${options?.method ?? 'GET'} ${url} failed (${response.status}):`, body);
   if (!response.ok) throw Object.assign(new Error(typeof body === 'object' && body && 'error' in body ? String(body.error) : `Request failed (${response.status})`), { status: response.status });
   return body as T;
 }
@@ -680,7 +689,7 @@ function finishRenderUI() {
   document.querySelector('.projects-screen')!.innerHTML = `<section class="project-library" aria-label="Saved projects"><div class="library-main"><h2>Your projects</h2><button class="button primary new-project-button" type="button" data-action="import" title="Import a script as a separate project" ${importing || busy() || libraryBusy || !libraryReady ? 'disabled' : ''}>${icon('upload', 16)} ${importing ? 'Importing…' : 'New project from a script'}</button>${libraryReady ? `<ul class="project-list">${projectList.map(item => {
       const current = item.id === projectId;
       const edited = new Date(item.updatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-      return `<li class="project-row ${current ? 'is-current' : ''}"><div class="project-row-text">${current ? `<label class="field-label" for="project-name">OPEN NOW · NAME</label><input id="project-name" value="${esc(prefs.name)}" maxlength="100" autocomplete="off">` : `<span class="project-row-name">${esc(item.name)}</span>`}<small>Edited ${esc(edited)}${item.renderCount ? ` · audio for ${item.renderCount} scene${item.renderCount === 1 ? '' : 's'}` : ''}</small></div><div class="project-row-actions">${current ? '' : `<button type="button" class="button secondary small" data-action="open-project" data-id="${esc(item.id)}" ${libraryBusy || busy() ? 'disabled' : ''}>Open</button><button type="button" class="text-link is-danger" data-action="delete-project" data-id="${esc(item.id)}" data-name="${esc(item.name)}" ${libraryBusy || busy() ? 'disabled' : ''}>Delete</button>`}</div></li>`;
+      return `<li class="project-row ${current ? 'is-current' : ''}"><div class="project-row-text">${current ? `<label class="field-label" for="project-name">OPEN NOW · NAME</label><input id="project-name" value="${esc(prefs.name)}" maxlength="100" autocomplete="off">` : `<span class="project-row-name">${esc(item.name)}</span>`}<small>Edited ${esc(edited)}${item.renderCount ? ` · ${item.renderCount} saved audio track${item.renderCount === 1 ? '' : 's'}` : ''}</small></div><div class="project-row-actions">${current ? '' : `<button type="button" class="button secondary small" data-action="open-project" data-id="${esc(item.id)}" ${libraryBusy || busy() ? 'disabled' : ''}>Open</button><button type="button" class="text-link is-danger" data-action="delete-project" data-id="${esc(item.id)}" data-name="${esc(item.name)}" ${libraryBusy || busy() ? 'disabled' : ''}>Delete</button>`}</div></li>`;
     }).join('')}</ul>` : '<p class="library-note">Opening your projects…</p>'}<p class="library-note">A project keeps its script, cast, settings, audio and takes together. New project imports a PDF, Fountain or text file.</p></div>
     <div class="library-side"><h2>Backups</h2><div class="project-actions"><button type="button" class="button secondary" data-action="backup-project" ${!libraryReady || libraryBusy || busy() ? 'disabled' : ''}>Export backup</button><button type="button" class="button secondary" data-action="restore-project" ${!libraryReady || libraryBusy || busy() ? 'disabled' : ''}>Restore backup</button></div><p class="library-note">An export holds this project and its scene audio, not your self-tapes. Restore opens a .sgbackup file as a separate project.</p><div class="project-actions"><button type="button" class="button secondary" data-action="retry-save" hidden>Retry save / connection</button><button type="button" class="button secondary" data-action="recover-project" hidden>Save draft as new project</button></div></div></section>`;
   for (const item of parsed.scenes) {
@@ -706,7 +715,7 @@ function finishRenderUI() {
     : canGenerate ? 'Press Play to make the audio and listen'
     : voiceEngine === 'kokoro' ? 'The built-in voices are not downloaded yet. Download them in Settings.' : 'Voices are not connected yet';
   // A hosted engine is paid per character, so the most this press can send is shown before it.
-  const paid = hostedEngine() && current ? renderInputs(current).scene.lines.filter(line => line.kind === 'dialogue' || prefs.directions).reduce((sum, line) => sum + line.text.length, 0) : 0;
+  const paid = hostedEngine() && current ? renderInputs(current).scene.lines.filter(line => line.kind === 'dialogue' || prefs.directions).reduce((sum, line) => sum + line.text.length + (voiceEngine === 'gemini' ? GEMINI_PREFIX.length : 0), 0) : 0;
   document.querySelector('.render-hint')!.textContent = paid ? `Sends up to ${paid.toLocaleString()} characters to ${engineName()}, which charges for them. Lines already voiced are reused free.` : 'Makes two tracks: the whole cast, and one with silence for your lines.';
   document.querySelector('[data-action="render"]')!.innerHTML = `${icon('wave', 17)} ${busy() ? 'Making audio…' : result ? 'Make audio again' : 'Make audio'}`;
   if (aiLoading) {
@@ -1340,7 +1349,6 @@ function settingsMarkup(): string {
           ${engine === 'chatterbox' ? '' : row('service-chatterbox', 'Your Chatterbox server address', 'Used for your own voice, and when you switch back to Chatterbox.', `${input('service-chatterbox', draft.chatterbox.url, 'url', 'placeholder="For example http://192.168.1.20:8095"')}${result('chatterbox')}`)}
           ${row('service-whisperx', 'WhisperX server', 'Used by Check what I said, on the Practice card. Your line is sent there after the scene has already moved on, and compared with the script. Listening itself needs no server.', `${input('service-whisperx', draft.whisperx.url)}${result('whisperx')}`)}
           ${row('service-name', 'Name of this set-up', 'Shown when Script Glow starts, so you know which computer you are on.', input('service-name', draft.name, 'text'))}
-          <label class="checkbox-label"><input type="checkbox" id="service-legacy" ${draft.chatterbox.legacyCache ? 'checked' : ''} ${off}> Reuse audio made by an older Script Glow</label>
           <p class="library-note">Addresses are saved in <code>data/connections.json</code>, which never holds a key, so it is safe to copy to another computer.</p>
         </details>
       </section>
@@ -1640,7 +1648,7 @@ async function renderScene(playWhenReady = false) {
   if (libraryBusy || startingProject !== projectId) return;
   const current = scene(); if (!current || busy()) return;
   const request = renderInputs(current);
-  const cacheKey = JSON.stringify(request);
+  const cacheKey = renderDigest(request);
   invalidate(); notice = ''; noticeError = false;
   const token = generation;
   job = { id: '', status: 'queued', completed: 0, total: current.lines.filter(line => line.kind === 'dialogue' || prefs.directions).length }; render();
@@ -1835,7 +1843,6 @@ function applySettingField(target: HTMLInputElement): boolean {
   if (target.id === 'service-names-engine') { draft.names = { engine: value, model: '' }; settingsResults = []; settingsNotice = ''; render(); return true; }
   if (target.id === 'service-names-model') draft.names.model = value;
   if (target.id === 'service-voice') draft.casting.preferredActorVoice = value;
-  if (target.id === 'service-legacy') draft.chatterbox.legacyCache = target.checked;
   return false;
 }
 // The Settings menu marks the section you are reading.

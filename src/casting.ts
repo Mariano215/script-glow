@@ -1,4 +1,4 @@
-import type { ParsedScript } from './parser.ts';
+import type { ParsedScript, ScriptLine } from './parser.ts';
 import { voiceCatalog } from './voice-catalog.ts';
 
 export type VoiceGender = 'female' | 'male' | 'unknown';
@@ -100,4 +100,10 @@ export function assignCast(characters: string[], available: string[], role: stri
     used.add(identity(cast[name]));
   }
   return cast;
+}
+// The voices a render needs: only the characters who are heard in these lines, in a stable order.
+// Kept to them, so changing an absent character's voice leaves the audio of this scene valid.
+export function voicesFor(lines: ScriptLine[], cast: Record<string, string>, directions: boolean): Record<string, string> {
+  const heard = new Set(lines.filter(line => line.kind === 'dialogue' || directions).map(line => line.character));
+  return Object.fromEntries(Object.entries(cast).filter(([name]) => heard.has(name)).sort(([a], [b]) => a.localeCompare(b)));
 }

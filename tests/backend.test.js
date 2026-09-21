@@ -397,3 +397,24 @@ test('scene audio downloads as MP3 and leaves no MP3 behind', async t => withSer
   assert.ok(bytes.subarray(0, 3).toString() === 'ID3' || bytes[0] === 0xff, 'It is an MP3 file');
   assert.deepEqual((await readdir(path.join(cacheDir, 'renders'))).filter(name => name.endsWith('.mp3')), []);
 }));
+
+test('files left half written by a crash are removed at start once they are an hour old', async () => {
+  const { mkdir, writeFile, utimes, access } = await import('node:fs/promises');
+  const testDir = await mkdtemp(path.join(os.tmpdir(), 'script-glow-sweep-'));
+  try {
+    const cacheDir = path.join(testDir, '.cache'), renders = path.join(cacheDir, 'renders');
+    const takes = path.join(cacheDir, 'projects', '11111111-2222-3333-4444-555555555555', 'takes');
+    await mkdir(renders, { recursive: true }); await mkdir(takes, { recursive: true });
+    const old = [path.join(renders, 'a-full.wav.part'), path.join(takes, 'b.tmp'), path.join(takes, 'c.mp4.part.mp4')];
+    const fresh = path.join(renders, 'd-full.wav.part'), kept = path.join(renders, 'e-full.wav');
+    for (const file of [...old, fresh, kept]) await writeFile(file, 'x');
+    const hoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    for (const file of [...old, kept]) await utimes(file, hoursAgo, hoursAgo);
+    createApp({ cacheDir, previewDir: path.join(testDir, 'previews'), connectionsFile: path.join(testDir, 'connections.json'), secretsFile: path.join(testDir, 'secrets.json') });
+    const gone = file => access(file).then(() => false, () => true);
+    for (let i = 0; i < 50 && !(await Promise.all(old.map(gone))).every(Boolean); i++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.deepEqual(await Promise.all(old.map(gone)), [true, true, true]);
+    assert.equal(await gone(fresh), false, 'A file still being written is left alone');
+    assert.equal(await gone(kept), false, 'Finished audio is never touched');
+  } finally { await rm(testDir, { recursive: true, force: true }); }
+});

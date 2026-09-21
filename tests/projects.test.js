@@ -23,7 +23,7 @@ async function render(base, projectId, number = 1) {
   const body = input(number); const key = JSON.stringify(body);
   const response = await post(base, '/api/render', { ...body, ...(projectId ? { projectId, renderKey: key } : {}) }); assert.equal(response.status, 202, await response.clone().text());
   const { jobId } = await response.json();
-  for (let n = 0; n < 500; n++) { const job = await (await fetch(`${base}/api/jobs/${jobId}`)).json(); if (!['queued', 'running'].includes(job.status)) { assert.equal(job.status, 'complete', job.error); return { key, result: job.result }; } await new Promise(resolve => setTimeout(resolve, 5)); }
+  for (let n = 0; n < 500; n++) { const job = await (await fetch(`${base}/api/jobs/${jobId}`)).json(); if (!['queued', 'running'].includes(job.status)) { assert.equal(job.status, 'complete', job.error); return { key, title: body.scene.title, result: job.result }; } await new Promise(resolve => setTimeout(resolve, 5)); }
   throw new Error('Render did not finish.');
 }
 
@@ -175,4 +175,26 @@ test('listening travels with the project, and a nonsense pause is refused', () =
   assert.equal(base.checkLines, false, 'Checking what was said is off until the actor asks for it');
   assert.equal(validatePreferences({ ...preferences(), checkLines: true }).checkLines, true);
   assert.throws(() => validatePreferences({ ...preferences(), checkLines: 'sure' }), /rehearsal settings/);
+});
+
+test('a render is saved under a short digest key, checked against the request', async () => fixture(async ({ base }) => {
+  const { renderDigest } = await import('../server/render-key.js');
+  const document = await (await post(base, '/api/projects', { preferences: preferences() })).json();
+  const body = input(1);
+  assert.equal((await post(base, '/api/render', { ...body, projectId: document.id, renderKey: renderDigest({ ...body, gapSeconds: 2 }) })).status, 400, 'A digest of other settings is refused');
+  const accepted = await post(base, '/api/render', { ...body, projectId: document.id, renderKey: renderDigest(body) });
+  assert.equal(accepted.status, 202);
+  const { jobId } = await accepted.json();
+  for (let n = 0; n < 500; n++) { const job = await (await fetch(`${base}/api/jobs/${jobId}`)).json(); if (job.status === 'complete') break; await new Promise(resolve => setTimeout(resolve, 10)); }
+  const saved = await (await fetch(`${base}/api/projects/${document.id}`)).json();
+  assert.equal(saved.renders[0].key, renderDigest(body));
+  assert.equal(saved.renders[0].title, body.scene.title);
+}));
+
+test('older JSON keys: a scene key over 300 lines is refused, a full script without a scope is not', async () => {
+  const { validateRenderKey } = await import('../server/projects.js');
+  const lines = Array.from({ length: 301 }, (_, i) => ({ id: `l${i}`, character: 'A', text: 'x', kind: 'dialogue' }));
+  const key = id => JSON.stringify({ scene: { id, title: 't', lines }, voices: {}, myCharacter: 'A', gapSeconds: 0, includeDirections: false });
+  assert.throws(() => validateRenderKey(key('scene-1')), /Invalid render compatibility key/);
+  assert.equal(validateRenderKey(key('full-script')), key('full-script'));
 });

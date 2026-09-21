@@ -126,6 +126,18 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
   }
   const app = express();
   const projects = createProjectStore(projectsDir, cacheDir);
+  // A crash or a forced quit can leave half-written audio, takes or MP3s behind, and nothing else
+  // ever removes them. At start, unfinished files an hour old or more are deleted.
+  void (async () => {
+    const stale = Date.now() - 60 * 60 * 1000;
+    const dirs = [path.join(cacheDir, 'renders')];
+    for (const entry of await readdir(projectsDir, { withFileTypes: true }).catch(() => [])) if (entry.isDirectory() && ID.test(entry.name)) dirs.push(path.join(projectsDir, entry.name), path.join(projectsDir, entry.name, 'takes'));
+    for (const dir of dirs) for (const name of await readdir(dir).catch(() => [])) {
+      if (!/\.(part|tmp|mp3)$|\.part\.mp4$/.test(name)) continue;
+      const file = path.join(dir, name);
+      if ((await stat(file).catch(() => null))?.mtimeMs < stale) await unlink(file).catch(() => {});
+    }
+  })();
   const jobs = new Map(), queue = [];
   let draining = false, activeImports = 0;
   const castingAI = createCastingAI({ serviceFetch, isRendering: () => draining || queue.length > 0, ollamaUrl: () => profile.ollama.url, engine: () => profile.names.engine, hosted: hostedModels,
@@ -325,6 +337,7 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
     }
     await writeWhole(previewFile, wav, 0o600);
     if (profile.casting.preferredActorVoice !== name) profile = await saveConnections(connectionsFile, { ...profile, casting: { ...profile.casting, preferredActorVoice: name } });
+    console.log(`Your voice was sent to Chatterbox as ${name}.`);
     res.json({ voice: name, seconds: Math.round(seconds * 10) / 10, previewUrl: '/private-voice-preview.wav' });
   });
   app.get('/api/voices/preview', async (req, res) => {
@@ -334,7 +347,16 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
     res.setHeader('Cache-Control', 'no-store');
     res.type('audio/wav').send(encodeWav(await lineAudio('Hello. This is how I sound when I read your scene with you.', voice)));
   });
-  app.post('/api/casting/guess-genders', async (req, res) => res.json(await castingAI.guess(req.body)));
+  // One line per call, so it can be shown later what left the machine: the engine and how many
+  // names, never the names themselves.
+  app.post('/api/casting/guess-genders', async (req, res) => {
+    const count = Array.isArray(req.body?.names) ? req.body.names.length : 0;
+    try {
+      const answer = await castingAI.guess(req.body);
+      console.log(`Name guesses: ${count} name${count === 1 ? '' : 's'} sent to ${profile.names.engine} (${answer.model})${answer.flagged ? ', some looked like instructions' : ''}.`);
+      res.json(answer);
+    } catch (error) { console.log(`Name guesses: ${count} name${count === 1 ? '' : 's'} to ${profile.names.engine} failed: ${error.message}`); throw error; }
+  });
   // The actor's own line, checked against the script after the wait has already been released,
   // so the transcript never decides when the scene goes on. The clip is held in memory here and
   // passed straight to the transcription server the actor named: it is never written to disk.
@@ -401,7 +423,7 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
   }
   async function lineAudio(text, voice) {
     const model = profile.voice.model || ENGINES[engine()]?.model || '';
-    const identity = engine() === 'kokoro' ? { version: 4, engine: 'kokoro', ...kokoroKey, text, voice } : isHosted() ? { version: 3, engine: engine(), model, text, voice } : profile.chatterbox.legacyCache ? { version: 1, text, voice } : { version: 2, namespace: profile.chatterbox.cacheNamespace, url: TTS_URL(), text, voice, ...(voice === profile.casting.preferredActorVoice && await sampleStamp() ? { sample: await sampleStamp() } : {}) };
+    const identity = engine() === 'kokoro' ? { version: 4, engine: 'kokoro', ...kokoroKey, text, voice } : isHosted() ? { version: 3, engine: engine(), model, text, voice } : { version: 2, namespace: profile.chatterbox.cacheNamespace, url: TTS_URL(), text, voice, ...(voice === profile.casting.preferredActorVoice && await sampleStamp() ? { sample: await sampleStamp() } : {}) };
     const key = createHash('sha256').update(JSON.stringify(identity)).digest('hex');
     const filename = path.join(cacheDir, 'lines', `${key}.wav`);
     try { return decodeWav(await readFile(filename)); } catch { /* Missing or corrupt cache: regenerate. */ }
@@ -507,12 +529,14 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
           await pruneCache('renders', 1024 * 1024 * 1024, [`${job.id}-full.wav`, `${job.id}-practice.wav`]);
           if (job.cancelled) continue;
           job.result = { fullUrl: `/audio/${job.id}-full.wav`, practiceUrl: `/audio/${job.id}-practice.wav`, duration: rendered.duration, cues: rendered.cues };
-          if (job.projectId) job.result = (await projects.attach(job.projectId, job.renderKey, job.result, () => job.cancelled, true)).result;
+          if (job.projectId) job.result = (await projects.attach(job.projectId, job.renderKey, job.result, () => job.cancelled, true, job.input?.scene.title)).result;
           if (job.cancelled) { delete job.result; continue; }
           job.status = 'complete';
           ownedFiles.clear();
         } catch (error) {
           job.status = 'error';
+          // A message made on purpose has a status. Anything else is a bug, so it goes to the terminal too.
+          if (!job.cancelled && !error.status && error.name !== 'TimeoutError') console.error('Render failed:', error);
           job.error = job.cancelled ? 'Render cancelled.' : error.name === 'TimeoutError' ? 'Chatterbox timed out after 180 seconds. Check the GPU service, then retry.' : error.message;
         } finally {
           delete job.input;

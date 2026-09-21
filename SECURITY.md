@@ -7,6 +7,7 @@ Script Glow is a single-user app that runs on your own computer. It has no accou
 - The app listens on `127.0.0.1` only. It refuses requests addressed to any other host name or sent from another site, and it cannot be shown inside another page.
 - Every change sent from the browser must carry a secret that is made new each time the app starts.
 - Imported scripts and backups are treated as untrusted: sizes are limited, text is escaped, and PDFs are read in a separate process with memory and time limits.
+- The secret stops web pages, not programs. Any program on this computer can reach `127.0.0.1`, ask for the secret and use the app as you would: read your projects and takes, make audio with your paid voice keys, and test a voice server address, which sends your Chatterbox token to it. A program running as you can read your files anyway. Another user account on the same computer can do the same, so use Script Glow on a computer that only you log in to.
 
 ## Keys
 
@@ -22,6 +23,7 @@ Script Glow is a single-user app that runs on your own computer. It has no accou
 | A hosted voice engine (ElevenLabs, OpenAI, Google Gemini) | The text of each line when new audio is made | That company |
 | A hosted engine for name guesses (OpenAI, Claude, Gemini, Grok, OpenRouter) | Character names only | That company |
 | A Chatterbox or Ollama server on another computer | Lines, names, and your voice recording | That computer |
+| The desktop app, at every start | A request for the latest release, and the download of a newer one | GitHub |
 
 Your script file, your settings and your self-tapes are never sent to any of them.
 
