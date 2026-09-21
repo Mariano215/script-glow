@@ -91,7 +91,7 @@ const said = error => error.code === 'ENOSPC' ? 'There is not enough free disk s
 export function createDownloader({ dir, manifest, fetchImpl = fetch, openFile = open }) {
   const total = manifest.files.reduce((sum, file) => sum + file.size, 0);
   let state = { status: 'idle', received: 0, total, error: '' };
-  let running = null, record = {};
+  let running = null, removing = null, record = {};
   async function fetchOne(file) {
     const final = assetPath(dir, file.path), part = `${final}.part`;
     if (await verified(dir, file, record, hashFile)) { state.received += file.size; return; }
@@ -141,6 +141,8 @@ export function createDownloader({ dir, manifest, fetchImpl = fetch, openFile = 
       if (!running) {
         state = { status: 'downloading', received: 0, total, error: '' };
         running = (async () => {
+          // A download asked for while the files are being removed starts once they are gone.
+          await removing?.catch(() => {});
           record = await readRecord(dir);
           try { for (const file of manifest.files) await fetchOne(file); state.status = 'ready'; }
           catch (error) { state = { ...state, status: 'error', error: said(error) }; }
@@ -154,8 +156,9 @@ export function createDownloader({ dir, manifest, fetchImpl = fetch, openFile = 
     async remove() {
       if (running) throw Object.assign(new Error('The voices are still downloading. Wait for the download to finish, then remove them.'), { status: 409 });
       // Retried: on Windows a file just closed by the stopped worker can stay locked for a moment.
-      await rm(dir, { recursive: true, force: true, maxRetries: 5 });
-      state = { status: 'idle', received: 0, total, error: '' };
+      removing = rm(dir, { recursive: true, force: true, maxRetries: 5 }).finally(() => { removing = null; });
+      await removing;
+      if (!running) state = { status: 'idle', received: 0, total, error: '' };
     },
   };
 }

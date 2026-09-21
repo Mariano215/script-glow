@@ -26,12 +26,19 @@ const loopback = (host) => ['localhost', '127.0.0.1', '[::1]'].includes(host);
 function fail(message, status = 400) { return Object.assign(new Error(message), { status }); }
 // A send error names the full local path. The page gets a plain sentence instead.
 const missing = error => error.status === 404 || error.code === 'ENOENT' ? fail('That file is no longer on this computer.', 404) : error;
-// Scene audio asked for with ?mp3: converted beside the WAV, sent, then removed.
+// Scene audio asked for with ?mp3: converted beside the WAV, sent, then removed, also when FFmpeg fails.
+// Two at a time: each is a full FFmpeg run, and a GET is easy to repeat.
+let mp3Running = 0;
 async function sendMp3(res, next, filename) {
   const dir = path.dirname(filename), output = `${path.basename(filename, '.wav')}-${randomUUID()}.mp3`;
   await stat(filename).catch(error => { throw missing(error); });
-  await makeMp3({ cwd: dir, input: path.basename(filename), output });
-  res.type('audio/mpeg').sendFile(output, { root: dir }, error => { void unlink(path.join(dir, output)).catch(() => {}); if (error) next(missing(error)); });
+  if (mp3Running >= 2) throw fail('Two MP3 files are being made already. Try again when they finish.', 429);
+  const remove = () => unlink(path.join(dir, output)).catch(() => {});
+  mp3Running++;
+  try { await makeMp3({ cwd: dir, input: path.basename(filename), output }); }
+  catch (error) { await remove(); throw error; }
+  finally { mp3Running--; }
+  res.type('audio/mpeg').sendFile(output, { root: dir }, error => { void remove(); if (error) next(missing(error)); });
 }
 function localUrl(value) { try { const url = new URL(value); return url.protocol === 'http:' && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash && loopback(url.hostname); } catch { return false; } }
 // Kokoro ships only once the Misaki word-list provenance clears (release-gate.json).

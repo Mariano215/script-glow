@@ -382,3 +382,18 @@ test('a transcription server that is down is reported in words an actor can act 
     return wav;
   });
 });
+
+// Runs the MP3 part only where FFmpeg is installed.
+test('scene audio downloads as MP3 and leaves no MP3 behind', async t => withServer(async (base, _calls, cacheDir) => {
+  const accepted = await post(base, '/api/render', input());
+  const job = await completed(base, (await accepted.json()).jobId);
+  assert.equal((await fetch(`${base}/audio/00000000-0000-0000-0000-000000000000-full.wav?mp3`)).status, 404);
+  const { findFfmpeg } = await import('../server/video.js');
+  if (!await findFfmpeg()) { t.skip('FFmpeg is not installed here'); return; }
+  const response = await fetch(`${base}${job.result.fullUrl}?mp3`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'audio/mpeg');
+  const bytes = Buffer.from(await response.arrayBuffer());
+  assert.ok(bytes.subarray(0, 3).toString() === 'ID3' || bytes[0] === 0xff, 'It is an MP3 file');
+  assert.deepEqual((await readdir(path.join(cacheDir, 'renders'))).filter(name => name.endsWith('.mp3')), []);
+}));

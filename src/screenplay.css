@@ -198,6 +198,19 @@
   font-size: 13px;
   color: #495847;
 }
+.scene-cast {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 10px 18px;
+  border-bottom: 1px solid #e1e3db;
+  font-size: 13px;
+  color: #25332e;
+}
+.scene-cast > span { font-size: 11px; letter-spacing: .12em; color: #6b7169; margin-right: 4px; }
+.scene-cast b { font-weight: 500; padding: 3px 10px; border-radius: 999px; background: #e7eee5; }
+.scene-cast b.is-you { background: #f6e3bd; }
 .reading-controls label { display: flex; align-items: center; gap: 7px; cursor: pointer; }
 .reading-controls input { accent-color: #537342; }
 .reading-controls span { font-size: 13px; }
@@ -289,6 +302,7 @@
   .page-heading,
   .settings-panel,
   .script-toolbar,
+  .scene-cast,
   .reading-controls,
   .script-footer,
   .page-footer,
