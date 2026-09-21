@@ -65,3 +65,15 @@ export async function makeMp4({ cwd, input, output, start, length }) {
   if (!tool) throw Object.assign(new Error('FFmpeg is not installed, so the take cannot be converted here.'), { status: 503 });
   await run(tool.program, mp4Arguments({ input, output, start, length }), { cwd, timeout: 15 * 60 * 1000 });
 }
+
+// Scene audio saved as MP3 instead of WAV. Same rules as above: bare file names inside cwd.
+export function mp3Arguments({ input, output }) {
+  if (!/^[\w.-]+$/.test(input) || !/^[\w.-]+$/.test(output)) throw new Error('Invalid file name for conversion.');
+  return ['-hide_banner', '-nostdin', '-y', '-i', input, '-codec:a', 'libmp3lame', '-q:a', '2', output];
+}
+
+export async function makeMp3({ cwd, input, output }) {
+  const tool = await findFfmpeg();
+  if (!tool) throw Object.assign(new Error('FFmpeg is not installed, so the audio cannot be saved as MP3.'), { status: 503 });
+  await run(tool.program, mp3Arguments({ input, output }), { cwd, timeout: 10 * 60 * 1000 });
+}

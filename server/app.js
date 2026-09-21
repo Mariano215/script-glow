@@ -11,7 +11,7 @@ import { createProjectStore, validateRenderKey } from './projects.js';
 import { CONNECTIONS_FILE, DEFAULT_CONNECTIONS, saveConnections, validateConnections, writeWhole } from './connections.js';
 import { createSecrets, SECRETS_FILE } from './secrets.js';
 import { ENGINES, TEXT_ENGINES, hostedText, hostedVoices } from './hosted.js';
-import { findFfmpeg } from './video.js';
+import { findFfmpeg, makeMp3 } from './video.js';
 import { MANIFEST, assetsReady, cacheIdentity, createDownloader, voiceList } from './kokoro/assets.js';
 import { WORKER_FILE, createKokoroClient } from './kokoro/client.js';
 
@@ -26,6 +26,13 @@ const loopback = (host) => ['localhost', '127.0.0.1', '[::1]'].includes(host);
 function fail(message, status = 400) { return Object.assign(new Error(message), { status }); }
 // A send error names the full local path. The page gets a plain sentence instead.
 const missing = error => error.status === 404 || error.code === 'ENOENT' ? fail('That file is no longer on this computer.', 404) : error;
+// Scene audio asked for with ?mp3: converted beside the WAV, sent, then removed.
+async function sendMp3(res, next, filename) {
+  const dir = path.dirname(filename), output = `${path.basename(filename, '.wav')}-${randomUUID()}.mp3`;
+  await stat(filename).catch(error => { throw missing(error); });
+  await makeMp3({ cwd: dir, input: path.basename(filename), output });
+  res.type('audio/mpeg').sendFile(output, { root: dir }, error => { void unlink(path.join(dir, output)).catch(() => {}); if (error) next(missing(error)); });
+}
 function localUrl(value) { try { const url = new URL(value); return url.protocol === 'http:' && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash && loopback(url.hostname); } catch { return false; } }
 // Kokoro ships only once the Misaki word-list provenance clears (release-gate.json).
 // SCRIPT_GLOW_EXPERIMENTAL_KOKORO=1 turns it on before that, for development.
@@ -233,7 +240,9 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
     res.json(await projects.attach(req.params.id, req.body?.key, req.body?.result));
   });
   app.get('/api/projects/:id/audio/:filename', async (req, res, next) => {
-    const filename = await projects.audioPath(req.params.id, req.params.filename); res.type('audio/wav');
+    const filename = await projects.audioPath(req.params.id, req.params.filename);
+    if (req.query.mp3 !== undefined) return sendMp3(res, next, filename);
+    res.type('audio/wav');
     res.sendFile(path.basename(filename), { root: path.dirname(filename) }, error => { if (error) next(missing(error)); });
   });
   // Takes are the actor's own recording of themselves. They stay on this machine, are never sent
@@ -538,10 +547,11 @@ export function createApp({ cacheDir = path.join(HOME, '.cache'), projectsDir = 
     if (['running', 'queued'].includes(job.status)) { job.cancelled = true; job.status = 'error'; job.error = 'Render cancelled.'; }
     res.json({ ok: true });
   });
-  app.get('/audio/:filename', (req, res) => {
+  app.get('/audio/:filename', async (req, res, next) => {
     if (!/^([a-f0-9-]{36})-(full|practice)\.wav$/.test(req.params.filename) || !ID.test(req.params.filename.slice(0, 36))) throw fail('Audio not found.', 404);
     const job = jobs.get(req.params.filename.slice(0, 36));
     if (job && job.status !== 'complete') throw fail('Audio export is not ready.', 404);
+    if (req.query.mp3 !== undefined) return sendMp3(res, next, path.join(cacheDir, 'renders', req.params.filename));
     res.setHeader('Content-Type', 'audio/wav');
     res.sendFile(req.params.filename, { root: path.join(cacheDir, 'renders') }, error => { if (error && !res.headersSent) res.status(404).json({ error: 'Audio export not found. Render the scene again.' }); });
   });

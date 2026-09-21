@@ -115,3 +115,18 @@ test('a take is trimmed and converted to an MP4 beside the original', async t =>
     } finally { await rm(temp, { recursive: true, force: true }); }
   });
 });
+
+// Runs only where FFmpeg is installed. Scene audio saved as MP3 instead of WAV.
+test('scene audio converts from WAV to MP3', async t => {
+  const { findFfmpeg, makeMp3, mp3Arguments } = await import('../server/video.js');
+  assert.throws(() => mp3Arguments({ input: '../a.wav', output: 'b.mp3' }), /Invalid/);
+  if (!await findFfmpeg()) { t.skip('FFmpeg is not installed here'); return; }
+  const { encodeWav } = await import('../server/audio.js');
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'script-glow-mp3-'));
+  try {
+    await writeFile(path.join(temp, 'scene-full.wav'), encodeWav(Buffer.alloc(48000)));
+    await makeMp3({ cwd: temp, input: 'scene-full.wav', output: 'scene-full.mp3' });
+    const bytes = await readFile(path.join(temp, 'scene-full.mp3'));
+    assert.ok(bytes.subarray(0, 3).toString() === 'ID3' || (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0), 'It is an MP3 file');
+  } finally { await rm(temp, { recursive: true, force: true }); }
+});

@@ -436,17 +436,40 @@ window.addEventListener('beforeunload', event => {
   flushSettingsSave();
   if (libraryBusy || libraryError || savePromise || libraryReady && JSON.stringify(prefs) !== lastSynced) { event.preventDefault(); event.returnValue = ''; }
 });
+// Several scenes picked with Shift or Cmd/Ctrl click are kept as "picked-29-30-31", in script order,
+// and play and render as one track, like the full script.
+const PICKED = 'picked-';
+const pickedIds = () => prefs.sceneId.startsWith(PICKED) ? prefs.sceneId.slice(PICKED.length).split('-').map(n => `scene-${n}`).filter(id => parsed.scenes.some(item => item.id === id)) : [];
+const withHeadings = (scenes: Scene[]) => scenes.flatMap(item => [{ id: `heading-${item.id}`, character: 'Narrator', text: item.title, kind: 'direction' as const, format: 'heading' as const }, ...item.lines]);
+const scopeName = (item?: Scene) => item?.id === 'full-script' ? 'full script' : item?.id.startsWith(PICKED) ? 'scenes' : 'scene';
 function scene(): Scene | undefined {
-  if (prefs.sceneId === 'full-script' && parsed.scenes.length) return { id: 'full-script', title: prefs.name, lines: parsed.scenes.flatMap(item => [
-    { id: `heading-${item.id}`, character: 'Narrator', text: item.title, kind: 'direction' as const, format: 'heading' as const }, ...item.lines,
-  ]) };
-  return parsed.scenes.find(item => item.id === prefs.sceneId) || parsed.scenes[0];
+  if (prefs.sceneId === 'full-script' && parsed.scenes.length) return { id: 'full-script', title: prefs.name, lines: withHeadings(parsed.scenes) };
+  const picked = pickedIds();
+  if (picked.length > 1) return { id: prefs.sceneId, title: `Scenes ${picked.map(id => id.slice(6)).join(', ')}`, lines: withHeadings(parsed.scenes.filter(item => picked.includes(item.id))) };
+  return parsed.scenes.find(item => item.id === (picked[0] ?? prefs.sceneId)) || parsed.scenes[0];
 }
+// Shift picks every scene between the last plain click and this one. Cmd/Ctrl adds or removes one.
+let pickAnchor = '';
+function pickScenes(id: string, range: boolean) {
+  const order = parsed.scenes.map(item => item.id);
+  const now = pickedIds().length ? pickedIds() : order.includes(prefs.sceneId) ? [prefs.sceneId] : [];
+  let chosen: string[];
+  if (range) {
+    const [a, b] = [order.indexOf(order.includes(pickAnchor) ? pickAnchor : now[0] ?? id), order.indexOf(id)].sort((x, y) => x - y);
+    chosen = order.slice(a, b + 1);
+  } else { chosen = now.includes(id) ? now.filter(item => item !== id) : [...now, id]; pickAnchor = id; }
+  chosen = order.filter(item => chosen.includes(item));
+  return chosen.length > 1 ? PICKED + chosen.map(item => item.slice(6)).join('-') : chosen[0] ?? id;
+}
+// Downloads come as WAV, or as MP3 when FFmpeg is installed. A per-browser choice, like the actor name.
+const formatKey = 'script-glow:audio-format';
+const audioFormat = () => { try { return tools.ffmpeg && localStorage.getItem(formatKey) === 'mp3' ? 'mp3' : 'wav'; } catch { return 'wav'; } };
+const saveUrl = (url: string) => audioFormat() === 'mp3' ? `${url}?mp3` : url;
 function renderInputs(current: Scene, spoken = true) {
   // What the engine is asked to say, not what the page shows: parentheticals are notes.
   // Say it like respellings are part of what is sent, so they are part of the render key too.
   if (spoken) current = { ...current, lines: sayItLike(spokenLines(current.lines), prefs.sayAs) };
-  return { scene: current, ...(current.id === 'full-script' ? { scope: 'script' } : {}), voices: Object.fromEntries(Object.entries(prefs.cast).sort(([a], [b]) => a.localeCompare(b))), myCharacter: prefs.role, gapSeconds: prefs.gap, includeDirections: prefs.directions };
+  return { scene: current, ...(current.id === 'full-script' || current.id.startsWith(PICKED) ? { scope: 'script' } : {}), voices: Object.fromEntries(Object.entries(prefs.cast).sort(([a], [b]) => a.localeCompare(b))), myCharacter: prefs.role, gapSeconds: prefs.gap, includeDirections: prefs.directions };
 }
 // Audio made before parentheticals were silenced is keyed by the text as it was written.
 // It still plays; only a fresh render uses the new text. Nobody loses a rendered scene to an
@@ -643,8 +666,9 @@ function finishRenderUI() {
   document.querySelector('#my-role')!.parentElement!.insertAdjacentHTML('beforeend', '<a class="cast-shortcut" href="#cast">Configure cast & voices →</a>');
   const current = scene();
   const whole = current?.id === 'full-script';
-  const selection = whole ? 'full script' : 'scene';
-  document.querySelector('.section-label')!.insertAdjacentHTML('afterend', `<div class="scene-picker"><label for="scene-select">Choose what to play</label><select id="scene-select" ${!parsed.scenes.length ? 'disabled' : ''}><option value="full-script" ${whole ? 'selected' : ''}>Full script · ${parsed.scenes.length} scenes</option>${parsed.scenes.map((item, index) => `<option value="${esc(item.id)}" ${current?.id === item.id ? 'selected' : ''}>${index + 1}. ${esc(item.title)}</option>`).join('')}</select><small>${parsed.scenes.length} scenes available · choose any scene or all</small></div>`);
+  const several = whole || !!current?.id.startsWith(PICKED);
+  const selection = scopeName(current);
+  document.querySelector('.section-label')!.insertAdjacentHTML('afterend', `<div class="scene-picker"><label for="scene-select">Choose what to play</label><select id="scene-select" ${!parsed.scenes.length ? 'disabled' : ''}><option value="full-script" ${whole ? 'selected' : ''}>Full script · ${parsed.scenes.length} scenes</option>${several && !whole ? `<option value="${esc(current!.id)}" selected>${esc(current!.title)}</option>` : ''}${parsed.scenes.map((item, index) => `<option value="${esc(item.id)}" ${current?.id === item.id ? 'selected' : ''}>${index + 1}. ${esc(item.title)}</option>`).join('')}</select><small>${parsed.scenes.length} scenes available · Shift-click scenes in the list to play several</small></div>`);
   document.querySelector('.cast-list')!.innerHTML = castMarkup();
   document.querySelector('.cast-list')!.insertAdjacentHTML('beforebegin', `<div class="ai-casting"><p id="ai-casting-status" role="status">${esc(aiMessage || 'Used voices are greyed out. The AI suggests voice types when script cues are missing.')}</p>${Object.keys(stagedGuesses).length ? `<button type="button" data-action="apply-guesses" ${busy() || aiLoading ? 'disabled' : ''}>Apply AI voice suggestions</button>` : ''}${missingGuesses().length ? /Name guessing is off/.test(aiMessage) ? '<a class="button secondary small" href="#settings">Turn on name guessing in Settings</a>' : `<button type="button" data-action="guess-names" ${busy() || aiLoading ? 'disabled' : ''}>${aiLoading ? 'Guessing names…' : 'Retry AI name guesses'}</button>` : ''}</div>`);
   document.querySelector('.cast-card > p')!.textContent = `${voices.length} voices available · press Preview voice to hear one`;
@@ -664,7 +688,7 @@ function finishRenderUI() {
     const option = document.querySelector<HTMLOptionElement>(`#scene-select option[value="${CSS.escape(item.id)}"]`);
     if (option) option.textContent += ` · ${label}`;
   }
-  const allScene = { id: 'full-script', title: prefs.name, lines: parsed.scenes.flatMap(item => [{ id: `heading-${item.id}`, character: 'Narrator', text: item.title, kind: 'direction' as const, format: 'heading' as const }, ...item.lines]) };
+  const allScene = { id: 'full-script', title: prefs.name, lines: withHeadings(parsed.scenes) };
   const allSaved = cachedRender(allScene)?.result;
   document.querySelector('[data-action="scope-script"] small')?.insertAdjacentHTML('beforeend', `<span class="scene-save-badge ${allSaved ? 'is-rendered' : ''}">${allSaved?.fullUrl.startsWith(`/api/projects/${projectId}/audio/`) ? 'Audio ready' : allSaved ? 'Audio ready (not saved)' : 'Audio not made yet'}</span>`);
   updateSaveUI();
@@ -693,11 +717,11 @@ function finishRenderUI() {
   paper.style.setProperty('--character-color', safeColor(prefs.characterColor, highlightDefaults.characterColor));
   paper.style.setProperty('--spoken-color', safeColor(prefs.spokenColor, highlightDefaults.spokenColor));
   paper.querySelector('.script-meta > span:last-child')?.remove();
-  if (whole) document.querySelector('.script-toolbar > div')!.textContent = `FULL SCRIPT · ${parsed.scenes.length} SCENES`;
+  if (several) document.querySelector('.script-toolbar > div')!.textContent = whole ? `FULL SCRIPT · ${parsed.scenes.length} SCENES` : current!.title.toUpperCase();
   const scroll = document.createElement('div'); scroll.className = 'script-paper-scroll'; paper.before(scroll); scroll.append(paper);
   scroll.insertAdjacentHTML('beforebegin', `<div class="reading-controls"><label><input type="checkbox" id="follow-playback" ${prefs.follow ? 'checked' : ''}> Auto-follow spoken line</label><span class="reading-legend"><i style="background:${safeColor(prefs.spokenColor, highlightDefaults.spokenColor)}"></i> Line playing now ${prefs.highlightCharacter ? `<i style="background:${safeColor(prefs.characterColor, highlightDefaults.characterColor)}"></i> ${prefs.highlightCharacter === '@role' ? 'Your lines' : `${esc(pretty(prefs.highlightCharacter))}'s lines`}` : ''}</span></div>`);
   paper.querySelectorAll('.character-label span').forEach(element => element.remove());
-  if (whole) paper.querySelector(':scope > h2')?.remove();
+  if (several) paper.querySelector(':scope > h2')?.remove();
   placeParentheticals(paper, current?.lines || []);
   const renderedLines = new Map([...paper.querySelectorAll<HTMLElement>('[data-line]')].map(node => [node.dataset.line, node]));
   for (const line of current?.lines || []) {
@@ -1525,7 +1549,7 @@ function render() {
       <div class="sidebar-heading">YOUR WORKSPACE <span>01</span></div>
       <div class="project"><span class="project-icon">${icon('book')}</span><div><strong>${esc(prefs.name)}</strong><small>${parsed.scenes.length} scenes · ${parsed.characters.length} characters</small></div></div>
       <div class="section-label">SCENES <span>${String(parsed.scenes.length).padStart(2, '0')}</span></div>
-      <nav class="scenes">${parsed.scenes.map((item, index) => { const yours = sceneIncludes(item, prefs.role); return `<button class="scene-tab ${current?.id === item.id ? 'selected' : ''} ${yours ? 'has-role' : ''}" data-action="scene" data-id="${esc(item.id)}" ${yours ? `title="${esc(prefs.role)} is in this scene"` : ''}><span class="scene-number">${String(index + 1).padStart(2, '0')}</span><span><strong>${esc(pretty(item.title.replace(/^(INT\.?|EXT\.?)\s*/i, '')))}</strong><small>${item.lines.filter(line => line.kind === 'dialogue').length} dialogue lines${yours ? ' · YOU' : ''}</small></span>${current?.id === item.id ? '<span class="scene-dot"></span>' : ''}</button>`; }).join('')}</nav>
+      <nav class="scenes">${parsed.scenes.map((item, index) => { const yours = sceneIncludes(item, prefs.role); return `<button class="scene-tab ${current?.id === item.id || pickedIds().includes(item.id) ? 'selected' : ''} ${yours ? 'has-role' : ''}" data-action="scene" data-id="${esc(item.id)}" ${yours ? `title="${esc(prefs.role)} is in this scene"` : ''}><span class="scene-number">${String(index + 1).padStart(2, '0')}</span><span><strong>${esc(pretty(item.title.replace(/^(INT\.?|EXT\.?)\s*/i, '')))}</strong><small>${item.lines.filter(line => line.kind === 'dialogue').length} dialogue lines${yours ? ' · YOU' : ''}</small></span>${current?.id === item.id || pickedIds().includes(item.id) ? '<span class="scene-dot"></span>' : ''}</button>`; }).join('')}</nav>
       <div class="sidebar-bottom"><div class="local-badge"><span class="status-dot ${ttsOnline ? 'online' : ''}"></span> ${connectionChecked ? ttsOnline ? 'Voices connected' : 'Voices not connected' : 'Checking voices…'}</div><p>Your words stay yours.<br>${hostedEngine() ? `Script lines go to ${esc(engineName())}<br>to be voiced.` : 'Scripts & audio stay local.'}</p><button class="text-link" data-action="reconnect">Check connection ${icon('chevron', 12)}</button></div>
     </aside>
     <main class="main">
@@ -1563,7 +1587,7 @@ function render() {
       </div>
       <footer class="page-footer"><span>MADE FOR THE MOMENT BEFORE “ACTION.”</span><span>LOCAL VOICES. YOUR STORY.</span></footer>
     </main>
-    <section class="player" aria-label="Scene audio player"><div class="player-scene"><span class="player-art">${icon('wave', 23)}</span><div><strong>${esc(current ? pretty(current.title.replace(/^(INT\.?|EXT\.?)\s*/i, '')) : 'No scene selected')}</strong><small id="player-status">${result ? 'Ready to rehearse' : busy() ? (hostedEngine() ? `Voicing with ${esc(engineName())}…` : 'Making audio with local voices…') : 'Press Play to make the audio and listen'}</small></div></div><div class="playback"><div class="playback-actions"><button class="icon-button" data-action="cue-back" aria-label="Previous cue" title="Previous cue (left arrow)" ${!result ? 'disabled' : ''}>${icon('back', 17)}</button><button class="play-button ${waitingFor ? 'is-waiting' : ''}" data-action="play" aria-label="${waitingFor ? 'Continue after your line' : `${audio.paused ? 'Play' : 'Pause'} scene`}" ${!result ? 'disabled' : ''}>${waitingFor ? `${icon('play', 17)}<span>Continue</span>` : icon(audio.paused ? 'play' : 'pause', 21)}</button><button class="icon-button" data-action="cue-forward" aria-label="Next cue" title="Next cue (right arrow)" ${!result ? 'disabled' : ''}>${icon('forward', 17)}</button><button class="icon-button ${prefs.loop ? 'enabled' : ''}" data-action="loop" aria-label="Loop scene" aria-pressed="${prefs.loop}">${icon('loop', 17)}</button><select id="playback-rate" aria-label="Playback speed">${[0.75, 1, 1.25, 1.5].map(rate => `<option value="${rate}" ${rate === prefs.rate ? 'selected' : ''}>${rate}×</option>`).join('')}</select></div><div class="seek-row"><span id="current-time">${time(audio.currentTime)}</span><input id="seek" type="range" aria-label="Seek audio" min="0" max="${result?.duration || 1}" step="0.05" value="${audio.currentTime || 0}" ${!result ? 'disabled' : ''}><span id="duration">${time(result?.duration || 0)}</span></div></div><div class="player-right"><div class="mode-switch" role="group" aria-label="Rehearsal mode"><button data-action="mode-full" class="${prefs.mode === 'full' ? 'selected' : ''}" aria-pressed="${prefs.mode === 'full'}">Full cast</button><button data-action="mode-practice" class="${prefs.mode === 'practice' ? 'selected' : ''}" aria-pressed="${prefs.mode === 'practice'}">Practice <span>YOU’RE UP</span></button></div><div class="downloads">${result ? `<a href="${esc(result.fullUrl)}" download="${esc(prefs.name)}-full.wav">${icon('download', 13)} Full cast</a><a href="${esc(result.practiceUrl)}" download="${esc(prefs.name)}-practice.wav">${icon('download', 13)} Practice</a>` : '<span>Downloads appear after the audio is made</span>'}</div></div></section>
+    <section class="player" aria-label="Scene audio player"><div class="player-scene"><span class="player-art">${icon('wave', 23)}</span><div><strong>${esc(current ? pretty(current.title.replace(/^(INT\.?|EXT\.?)\s*/i, '')) : 'No scene selected')}</strong><small id="player-status">${result ? 'Ready to rehearse' : busy() ? (hostedEngine() ? `Voicing with ${esc(engineName())}…` : 'Making audio with local voices…') : 'Press Play to make the audio and listen'}</small></div></div><div class="playback"><div class="playback-actions"><button class="icon-button" data-action="cue-back" aria-label="Previous cue" title="Previous cue (left arrow)" ${!result ? 'disabled' : ''}>${icon('back', 17)}</button><button class="play-button ${waitingFor ? 'is-waiting' : ''}" data-action="play" aria-label="${waitingFor ? 'Continue after your line' : `${audio.paused ? 'Play' : 'Pause'} scene`}" ${!result ? 'disabled' : ''}>${waitingFor ? `${icon('play', 17)}<span>Continue</span>` : icon(audio.paused ? 'play' : 'pause', 21)}</button><button class="icon-button" data-action="cue-forward" aria-label="Next cue" title="Next cue (right arrow)" ${!result ? 'disabled' : ''}>${icon('forward', 17)}</button><button class="icon-button ${prefs.loop ? 'enabled' : ''}" data-action="loop" aria-label="Loop scene" aria-pressed="${prefs.loop}">${icon('loop', 17)}</button><select id="playback-rate" aria-label="Playback speed">${[0.75, 1, 1.25, 1.5].map(rate => `<option value="${rate}" ${rate === prefs.rate ? 'selected' : ''}>${rate}×</option>`).join('')}</select></div><div class="seek-row"><span id="current-time">${time(audio.currentTime)}</span><input id="seek" type="range" aria-label="Seek audio" min="0" max="${result?.duration || 1}" step="0.05" value="${audio.currentTime || 0}" ${!result ? 'disabled' : ''}><span id="duration">${time(result?.duration || 0)}</span></div></div><div class="player-right"><div class="mode-switch" role="group" aria-label="Rehearsal mode"><button data-action="mode-full" class="${prefs.mode === 'full' ? 'selected' : ''}" aria-pressed="${prefs.mode === 'full'}">Full cast</button><button data-action="mode-practice" class="${prefs.mode === 'practice' ? 'selected' : ''}" aria-pressed="${prefs.mode === 'practice'}">Practice <span>YOU’RE UP</span></button></div><div class="downloads">${result ? `<a href="${esc(saveUrl(result.fullUrl))}" download="${esc(`${prefs.name} ${sceneTitle()}`)}-full.${audioFormat()}">${icon('download', 13)} Full cast</a><a href="${esc(saveUrl(result.practiceUrl))}" download="${esc(`${prefs.name} ${sceneTitle()}`)}-practice.${audioFormat()}">${icon('download', 13)} Practice</a>${tools.ffmpeg ? `<select id="audio-format" aria-label="Download format"><option value="wav">WAV</option><option value="mp3" ${audioFormat() === 'mp3' ? 'selected' : ''}>MP3</option></select>` : ''}` : '<span>Downloads appear after the audio is made</span>'}</div></div></section>
   </div>`;
   finishRenderUI();
   document.querySelector('.script-paper-scroll')?.scrollTo({ top: scrollTop, left: scrollLeft, behavior: 'instant' });
@@ -1636,7 +1660,7 @@ async function renderScene(playWhenReady = false) {
       }
       if (update.status === 'error') { render(); return; }
       const progress = document.querySelector('#job-progress'); if (progress) progress.innerHTML = progressMarkup();
-      const status = document.querySelector('#player-status'); if (status) status.textContent = `Making audio for the ${current.id === 'full-script' ? 'full script' : 'scene'}: ${job.completed}/${job.total} lines`;
+      const status = document.querySelector('#player-status'); if (status) status.textContent = `Making audio for the ${scopeName(current)}: ${job.completed}/${job.total} lines`;
       await new Promise(resolve => setTimeout(resolve, 1200));
     }
   } catch (error) { if (token === generation) { job = { ...job!, status: 'error', error: error instanceof Error ? error.message : 'The audio could not be made.' }; render(); } }
@@ -1721,7 +1745,11 @@ app.addEventListener('click', async event => {
   if (action === 'reconnect') { await connect(); flash(ttsOnline ? 'Voices connected.' : 'Still cannot reach the voice service. Open Help, then Troubleshooting.', !ttsOnline); return; }
   if (action === 'dismiss') notice = '';
   if (action === 'scene' || action === 'scope-script') {
-    const id = action === 'scene' ? target.dataset.id! : 'full-script';
+    let id = action === 'scene' ? target.dataset.id! : 'full-script';
+    if (action === 'scene' && (event.shiftKey || event.metaKey || event.ctrlKey)) id = pickScenes(id, event.shiftKey);
+    else if (action === 'scene') pickAnchor = id;
+    // The server keeps a scene id to 100 characters.
+    if (id.length > 100) { flash('That is too many scenes to join. Choose fewer, or use Full script.', true); return; }
     if (id !== prefs.sceneId && mayCancelRender()) { prefs.sceneId = id; invalidate(true); }
     location.hash = '#rehearsal';
   }
@@ -1840,6 +1868,7 @@ app.addEventListener('change', async event => {
     const key = target.id === 'character-color' ? 'characterColor' : 'spokenColor';
     prefs[key] = safeColor(target.value, highlightDefaults[key]); persist(); render(); return;
   }
+  if (target.id === 'audio-format') { try { localStorage.setItem(formatKey, target.value); } catch { /* stays WAV */ } render(); return; }
   if (target.id === 'scene-select') { if (mayCancelRender()) { prefs.sceneId = target.value; invalidate(true); } else target.value = prefs.sceneId; }
   if (target.id === 'follow-playback') { prefs.follow = target.checked; persist(); if (prefs.follow) syncActiveLine(true); return; }
   if (target.id === 'my-role') chooseRole(target.value);
@@ -2028,7 +2057,7 @@ function updatePlayButton() {
     // While the scene waits for your line, the Play button says what it will do.
     button.classList.toggle('is-waiting', !!waitingFor);
     button.innerHTML = waitingFor ? `${icon('play', 17)}<span>Continue</span>` : icon(audio.paused ? 'play' : 'pause', 21);
-    button.setAttribute('aria-label', waitingFor ? 'Continue after your line' : `${audio.paused ? 'Play' : 'Pause'} ${scene()?.id === 'full-script' ? 'full script' : 'scene'}`);
+    button.setAttribute('aria-label', waitingFor ? 'Continue after your line' : `${audio.paused ? 'Play' : 'Pause'} ${scopeName(scene())}`);
   }
   updatePlaybackStatus();
 }
