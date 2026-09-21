@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Run several scenes as one.** Click a scene, then Shift-click another to pick every scene between them. Cmd-click (Ctrl on Windows and Linux) adds or removes one scene. The picked scenes play in script order, and **Make audio** makes one track for all of them.
+- **Download as MP3.** With FFmpeg installed, a **WAV** or **MP3** choice sits next to the download links. The choice is kept in this browser.
+
 ## 0.5.0 (2026-09-20)
 
 - **Check what I said.** With listening on, each of your lines is marked in the script as **Said**, **Half said** or **Not this line**, so you can see where you dried or jumped a line. It needs a WhisperX server address under Settings, Advanced. Your line goes there after the scene has already carried on, so the rehearsal is never held up waiting for it. Off until you switch it on, marks last only for the run, and nothing is scored or saved.

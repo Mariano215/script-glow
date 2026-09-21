@@ -23,7 +23,8 @@ const sections: [string, string, string][] = [
     <li>The loop button repeats the whole scene. Mark <strong>A</strong> and <strong>B</strong> at the current cue to repeat just that exchange instead; <strong>Clear</strong> removes the marks.</li>
     <li>Playback runs from 0.75× to 1.5× speed. Speed does not need new audio, and it never shortens the pause left for your own line in practice mode.</li>
     <li><strong>Pause between lines</strong> and <strong>Read stage directions</strong> change the audio. Press <strong>Make audio</strong> again after you change them.</li>
-    <li>Download the full-cast or practice WAV to rehearse away from the app.</li>
+    <li>Download the full-cast or practice track to rehearse away from the app. With FFmpeg installed, choose <strong>WAV</strong> or <strong>MP3</strong> next to the download links.</li>
+    <li>To run several scenes together, click one scene in the list, then hold <strong>Shift</strong> and click another. Every scene between them is picked. Hold <strong>Cmd</strong> (Mac) or <strong>Ctrl</strong> to add or remove one scene at a time. The picked scenes play in script order and make one audio track.</li>
     <li><strong>Mark your script</strong> sets highlight colors for your role or another character. Colors never need new audio and stay visible in print.</li>
   </ul>`],
   ['cast', 'Casting and voices', `<ul>
