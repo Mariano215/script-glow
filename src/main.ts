@@ -11,7 +11,7 @@ import { parseScript, sayItLike, sceneIncludes, spokenLines, SAMPLE, type Scene,
 import { buildEnd, buildNext, buildTargets, cueAt, cueRate, firstLetters, lineMatch, loopRange, shouldWait, stepCue, type Cue, type LineVerdict } from './playback';
 import { releaseMicrophone, startListening, stopListening } from './listening';
 import { browserMp4, browserMp4Type, castingFileName, castingFit, countBeep, monoWav, setReaderLevel, mixerState, openRecorder, resumeMixer, takeClock, takeContainer, takeLabel, takeNeedsConverting, type Take, type TakeRecorder } from './selftape';
-import { inferCharacters, assignCast, resolvedGender, voiceGenders, voiceOwners, validGuesses, withNameGuesses, type NameGuesses, type GenderChoice } from './casting';
+import { inferCharacters, assignCast, resolvedGender, voiceGenders, voiceIdentity, voiceOwners, validGuesses, withNameGuesses, type NameGuesses, type GenderChoice } from './casting';
 import { voiceCatalog } from './voice-catalog';
 import { openHelp } from './help';
 import { parseServerHost } from './server-address';
@@ -621,6 +621,8 @@ async function playVoicePreview(id: string) {
     else failed();
   }
 }
+// The actor's own voice belongs to the chosen role. Any other voice can be shared by as many characters as needed.
+const actorOnly = (voice: string, name: string) => name !== prefs.role && !!castingConfig.preferredActorVoice && voiceIdentity(voice, castingConfig.aliases) === voiceIdentity(castingConfig.preferredActorVoice, castingConfig.aliases);
 function castMarkup() {
   return castCharacters().map((name, index) => {
     const profile = profiles[name];
@@ -633,7 +635,7 @@ function castMarkup() {
     const sorted = [...voices].sort((a, b) => Number(voiceGenders[b] === gender) - Number(voiceGenders[a] === gender));
     return `<article class="cast-row" aria-label="${esc(pretty(name))} character card"><span class="cast-avatar color-${index % 4}">${esc(name.slice(0, 1))}</span><div><label for="cast-${index}">${esc(pretty(name))}${name === prefs.role ? ' <small>YOU</small>' : ''}</label>
       ${name === 'Narrator' ? '' : `<select data-gender="${esc(name)}" aria-label="Voice type for ${esc(name)}" ${busy() ? 'disabled' : ''}><option value="auto" ${choice === 'auto' ? 'selected' : ''}>${profile?.source === 'ai' ? 'AI name guess' : 'From script'}: ${profile?.gender === 'unknown' ? 'unspecified' : profile?.gender || 'unspecified'}</option>${(['female', 'male', 'unknown'] as const).map(value => `<option value="${value}" ${choice === value ? 'selected' : ''}>${value === 'unknown' ? 'Unspecified' : pretty(value)}</option>`).join('')}</select>`}
-      <select id="cast-${index}" data-cast="${esc(name)}" aria-label="Voice for ${esc(name)}" ${busy() || !voices.length ? 'disabled' : ''}>${voices.length ? sorted.map(voice => { const owners = voiceOwners(voice, name, castCharacters(), prefs.cast, castingConfig.aliases); return `<option value="${esc(voice)}" ${voice === selectedVoice ? 'selected' : owners.length ? 'disabled' : ''}>${esc(voiceLabel(voice))}${voiceGenders[voice] ? ` · ${voiceGenders[voice]}` : ''}${voiceCatalog[voice]?.accent || liveVoices[voice]?.accent ? ` · ${esc(voiceCatalog[voice]?.accent || liveVoices[voice]?.accent || '')}` : ''}${owners.length ? ` — Assigned to ${esc(owners.map(pretty).join(', '))}` : ''}</option>`; }).join('') : '<option>Engine unavailable</option>'}</select>
+      <select id="cast-${index}" data-cast="${esc(name)}" aria-label="Voice for ${esc(name)}" ${busy() || !voices.length ? 'disabled' : ''}>${voices.length ? sorted.map(voice => { const owners = voiceOwners(voice, name, castCharacters(), prefs.cast, castingConfig.aliases); return `<option value="${esc(voice)}" ${voice === selectedVoice ? 'selected' : actorOnly(voice, name) ? 'disabled' : ''}>${esc(voiceLabel(voice))}${voiceGenders[voice] ? ` · ${voiceGenders[voice]}` : ''}${voiceCatalog[voice]?.accent || liveVoices[voice]?.accent ? ` · ${esc(voiceCatalog[voice]?.accent || liveVoices[voice]?.accent || '')}` : ''}${owners.length ? ` · also ${esc(owners.map(pretty).join(', '))}` : ''}</option>`; }).join('') : '<option>Engine unavailable</option>'}</select>
       <small class="casting-evidence" title="${esc(description)}">${esc(name === prefs.role ? 'Your chosen role' : choice === 'auto' && profile?.source === 'ai' ? gender === 'unknown' ? 'AI name guess inconclusive — choose above' : `AI name guess: ${gender} · override if needed` : choice === 'auto' && gender === 'unknown' ? 'Gender unclear — choose above' : choice === 'auto' ? `Script cue: ${gender}` : `${gender === 'unknown' ? 'Unspecified' : pretty(gender)} voice type override`)}${prefs.manualVoices[name] ? ' · voice picked manually' : ''}</small>
       ${selectedVoice && gender !== 'unknown' && voiceGenders[selectedVoice] !== gender ? `<small class="casting-conflict">This voice is ${esc(voiceGenders[selectedVoice] || 'not labeled')}, but the script suggests ${esc(gender)}.${!prefs.manualVoices[name] && name !== prefs.role ? ' No unused ' + esc(gender) + ' voice was left, so check this choice.' : ' Your choice is kept.'}</small>` : ''}
       ${shared.length ? `<small class="casting-conflict">Shared with ${esc(shared.map(pretty).join(', '))}. Choose an unused voice to make this character distinct.</small>` : ''}
@@ -1873,7 +1875,7 @@ app.addEventListener('change', async event => {
   if (target.id === 'follow-playback') { prefs.follow = target.checked; persist(); if (prefs.follow) syncActiveLine(true); return; }
   if (target.id === 'my-role') chooseRole(target.value);
   if (target.dataset.cast) {
-    if (target.value !== prefs.cast[target.dataset.cast] && voiceOwners(target.value, target.dataset.cast, castCharacters(), prefs.cast, castingConfig.aliases).length) { render(); return; }
+    if (target.value !== prefs.cast[target.dataset.cast] && actorOnly(target.value, target.dataset.cast)) { render(); return; }
     prefs.cast[target.dataset.cast] = target.value; prefs.manualVoices[target.dataset.cast] = true; invalidate();
   }
   if (target.dataset.sayAs !== undefined) {

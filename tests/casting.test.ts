@@ -72,14 +72,14 @@ test('ownership includes actor aliases, narrator and existing shared selections'
   assert.deepEqual(voiceOwners('Stock-Ash', 'ALICE', ['ALICE', 'BOB'], cast), []);
 });
 
-test('reserve later selections before new defaults; use a free voice before sharing', () => {
+test('reserve later selections before new defaults; share a voice of the right type when none is free', () => {
   const voices = ['MyVoice', 'Stock-Amber', 'Stock-Mica', 'Stock-Ash'];
   const profiles = inferCharacters(source, script);
   const cast = assignCast(['ALICE', 'BOB', 'ALEX'], voices, 'ALEX', { BOB: 'Stock-Amber' }, profiles, {}, { BOB: true });
   assert.equal(cast.ALICE, 'Stock-Mica');
   assert.equal(cast.BOB, 'Stock-Amber');
   const exhausted = assignCast(['ALICE', 'BOB', 'ALEX'], voices.slice(0, 2).concat('Stock-Ash'), 'ALEX', { BOB: 'Stock-Amber' }, profiles, {}, { BOB: true });
-  assert.equal(exhausted.ALICE, 'Stock-Ash', 'Use free fallback instead of sharing');
+  assert.equal(exhausted.ALICE, 'Stock-Amber', 'Share a voice of the right type rather than switch type');
   const manual = assignCast(['ALICE', 'BOB'], voices, 'OTHER', { ALICE: 'Stock-Amber', BOB: 'Stock-Amber' }, profiles, {}, { ALICE: true, BOB: true });
   assert.equal(manual.ALICE, manual.BOB, 'Existing explicit choices are not rewritten');
 });
@@ -122,4 +122,12 @@ test('arbitrary configured actor voice and aliases reserve one identity without 
   assert.deepEqual(configuredVoiceOwners('Stock-Mica', 'ALICE', ['ALICE', 'BOB'], cast, config.aliases), ['BOB']);
   assert.equal(assignConfiguredCast(['ALEX'], available, 'ALEX', { ALEX: 'Stock-Mica' }, {}, {}, { ALEX: true }, config).ALEX, 'Stock-Mica');
   assert.equal(assignConfiguredCast(['ALEX'], ['default', 'Stock-Mica'], 'ALEX', {}, {}, {}, {}, config).ALEX, 'default', 'Available alias still represents the configured actor voice');
+});
+
+test('more characters than voices: voices are shared, the actor voice stays with the role', () => {
+  const profiles = inferCharacters(source, script);
+  const cast = assignCast(['ALICE', 'BOB', 'ALEX', 'JAKKI'], ['MyVoice', 'Stock-Amber', 'Stock-Ash', 'Unlabeled'], 'ALEX', {}, profiles, { JAKKI: 'female' }, {});
+  assert.equal(cast.ALEX, 'MyVoice');
+  assert.equal(cast.JAKKI, 'Stock-Amber', 'A female character shares a female voice, not an unlabeled one');
+  assert.ok(Object.entries(cast).every(([name, voice]) => voice !== 'MyVoice' || name === 'ALEX'));
 });
