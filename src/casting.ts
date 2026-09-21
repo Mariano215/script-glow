@@ -94,7 +94,8 @@ export function assignCast(characters: string[], available: string[], role: stri
     else if (needsVoice(name)) {
       const pool = partnerVoices(available, gender, config);
       const candidates = pool.length ? pool : partnerVoices(available, 'unknown', config);
-      cast[name] = candidates.find(voice => !used.has(identity(voice))) || partnerVoices(available, 'unknown', config).find(voice => !used.has(identity(voice))) || candidates[0] || available[0];
+      // With no unused voice of the right type left, share one of that type rather than switch type.
+      cast[name] = candidates.find(voice => !used.has(identity(voice))) || candidates[0] || available[0];
     }
     used.add(identity(cast[name]));
   }
