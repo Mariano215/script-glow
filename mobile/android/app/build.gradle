@@ -16,8 +16,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // The upload key lives outside the repo; its path and password come from ~/.gradle/gradle.properties.
+    // Without them, a release build is left unsigned rather than failing.
+    signingConfigs {
+        release {
+            if (project.hasProperty('SCRIPTGLOW_UPLOAD_STORE_FILE')) {
+                storeFile file(SCRIPTGLOW_UPLOAD_STORE_FILE)
+                storePassword SCRIPTGLOW_UPLOAD_PASSWORD
+                keyAlias SCRIPTGLOW_UPLOAD_KEY_ALIAS
+                keyPassword SCRIPTGLOW_UPLOAD_PASSWORD
+            }
+        }
+    }
     buildTypes {
         release {
+            if (project.hasProperty('SCRIPTGLOW_UPLOAD_STORE_FILE')) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
