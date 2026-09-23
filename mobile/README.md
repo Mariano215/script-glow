@@ -32,4 +32,4 @@ npm run android   # needs Android Studio and its SDK
 
 ## Not in this version
 
-Build up line by line, A/B loop, self-tape and line check are desktop only for now. Android has no "Open in" file handler yet, so on Android use **Add from Files**.
+Build up line by line, A/B loop, self-tape and line check are desktop only for now. Android has no "Open in" file handler yet, so on Android use **Add from Files**. Tested on an Android 16 emulator: launch and import.

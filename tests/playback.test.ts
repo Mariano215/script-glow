@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cueRate, cueAt, stepCue, shouldWait, firstLetters, loopRange, buildTargets, buildEnd, buildNext, listenStart, listenStep, lineMatch } from '../src/playback.ts';
+import { cueRate, cueAt, stepCue, shouldWait, firstLetters, loopRange, buildTargets, buildEnd, buildNext, listenStart, listenFrom, listenStep, lineMatch } from '../src/playback.ts';
 
 const cues = [
   { lineId: 'a', start: 0, end: 2, character: 'DAVID' },
@@ -117,6 +117,14 @@ test('the burst a microphone gives as it opens is not taken for the room', () =>
   // or ordinary speech never clears it and the wait is never ended.
   const opening = [0, 0.36, 0.33, 0.07, 0.07, 0.07, 0.07, ...steady(9, 0.07)];
   assert.equal(run(500, [...opening, ...steady(50, 0.2), ...steady(30, 0.05)]).phase, 'done');
+});
+
+test('an actor with the first line is heard against the room measured before the scene began', () => {
+  const room = run(500, [...steady(8, 0), ...steady(8, 0.03)]).floor;
+  const line = [...steady(40, 0.25), ...steady(40, 0.03)];
+  assert.equal(run(500, line).phase, 'quiet', 'Measured on their own voice, the line is never heard');
+  const heard = line.reduce((state, level, index) => listenStep(state, level, index * 20, 500), listenFrom(0, room));
+  assert.equal(heard.phase, 'done');
 });
 
 test('the wait is only ended once', () => {

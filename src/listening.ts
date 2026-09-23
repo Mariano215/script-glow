@@ -1,7 +1,7 @@
 // Listening mode. While the player waits on the actor's line, the microphone level says when
 // they have finished, so the scene goes on without a key press. Only the level is read: no
 // recording is kept, nothing is written to disk and nothing leaves the browser.
-import { listenStart, listenStep, type ListenState } from './playback';
+import { listenFrom, listenStart, listenStep, type ListenState } from './playback';
 import { monoWav } from './selftape';
 
 const SAMPLE_MS = 20;
@@ -12,6 +12,8 @@ let source: MediaStreamAudioSourceNode | null = null;
 let samples: Float32Array<ArrayBuffer> | null = null;
 let timer: ReturnType<typeof setInterval> | undefined;
 let recorder: MediaRecorder | null = null;
+// The room as measured by prepareListening, before the scene began. Unset, each wait measures its own.
+let roomFloor: number | undefined;
 
 // A device another program holds can leave this pending for ever, so it is given a limit.
 // The actor is told, listening switches off, and Space still ends the wait as it always has.
@@ -37,10 +39,7 @@ function level(): number {
   return Math.sqrt(total / samples.length);
 }
 
-// `clip` is optional and only used with Check what I said. It is called after the wait has
-// already been released, with the actor's line as a WAV, so transcription never delays the cue.
-export async function startListening(holdMs: number, done: () => void, clip?: (wav: Blob) => void): Promise<void> {
-  if (timer !== undefined) return;
+async function open(): Promise<MediaStream> {
   const live = await microphone();
   if (!context) context = new AudioContext();
   if (context.state === 'suspended') await context.resume();
@@ -55,6 +54,29 @@ export async function startListening(holdMs: number, done: () => void, clip?: (w
     source = context.createMediaStreamSource(live);
     source.connect(analyser);
   }
+  return live;
+}
+
+// Called on the Play tap: opens the microphone and measures the room before the scene starts.
+// An actor with the scene's first line speaks from the moment the wait begins, so a room measured
+// then is their own voice, and the line is never heard. The tap also lets iOS start the meter.
+export async function prepareListening(): Promise<void> {
+  await open();
+  let state = listenStart(performance.now());
+  await new Promise<void>(resolve => {
+    const measuring = setInterval(() => {
+      state = listenStep(state, level(), performance.now(), 0);
+      if (state.phase === 'calibrating') return;
+      clearInterval(measuring); roomFloor = state.floor; resolve();
+    }, SAMPLE_MS);
+  });
+}
+
+// `clip` is optional and only used with Check what I said. It is called after the wait has
+// already been released, with the actor's line as a WAV, so transcription never delays the cue.
+export async function startListening(holdMs: number, done: () => void, clip?: (wav: Blob) => void): Promise<void> {
+  if (timer !== undefined) return;
+  const live = await open();
   if (clip) {
     const chunks: Blob[] = [];
     recorder = new MediaRecorder(live);
@@ -64,7 +86,7 @@ export async function startListening(holdMs: number, done: () => void, clip?: (w
     recorder.onstop = () => { void toWav(chunks).then(wav => { if (wav) clip(wav); }); };
     recorder.start();
   }
-  let state: ListenState = listenStart(performance.now());
+  let state: ListenState = roomFloor === undefined ? listenStart(performance.now()) : listenFrom(performance.now(), roomFloor);
   timer = setInterval(() => {
     state = listenStep(state, level(), performance.now(), holdMs);
     if (state.phase !== 'done') return;
@@ -98,5 +120,5 @@ export function releaseMicrophone(): void {
   stopListening();
   stream?.getTracks().forEach(track => track.stop());
   void context?.close();
-  stream = null; context = null; analyser = null; source = null; samples = null;
+  stream = null; context = null; analyser = null; source = null; samples = null; roomFloor = undefined;
 }

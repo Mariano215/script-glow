@@ -2,7 +2,7 @@ import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem } from '@capacitor/filesystem';
 import { cueAt, cueRate, firstLetters, shouldWait, stepCue } from '../../src/playback.ts';
-import { releaseMicrophone, startListening, stopListening } from '../../src/listening.ts';
+import { prepareListening, releaseMicrophone, startListening, stopListening } from '../../src/listening.ts';
 import { readBackup, sceneTracks, type SceneTrack } from './backup.ts';
 import { getAudio, listProjects, removeProject, saveBackup, savePrefs, type Saved } from './store.ts';
 import './style.css';
@@ -111,6 +111,18 @@ async function beginListening(lineId: string) {
   }
 }
 
+// Open the microphone on the Play tap, before any line of mine comes up. Otherwise an actor with
+// the first line is already talking while it opens, and the room is measured on their voice.
+async function warmUp() {
+  const p = prefs();
+  if (!(p.mode === 'practice' && p.wait && p.autoContinue)) return;
+  try { await prepareListening(); }
+  catch (error) {
+    p.autoContinue = false; persist();
+    toast(error instanceof Error ? error.message : 'The microphone could not be used, so listening is off.');
+  }
+}
+
 function leaveScene() {
   audio.pause(); stopListening(); releaseMicrophone();
   if (audioUrl) URL.revokeObjectURL(audioUrl);
@@ -211,7 +223,7 @@ function homeView() {
     <main class="home">
       ${projects.length ? `<h2 class="label">YOUR SCENES</h2><div class="cards">${cards}</div>` : `
       <section class="empty"><h1>Rehearse anywhere.</h1><p>Make the scene and its voices on your Mac. Send it here. Run lines on the train.</p>
-        <ol><li>On your Mac, open the project and choose <b>Back up</b>.</li><li>AirDrop the <b>.sgbackup</b> file to this phone, or save it to Files.</li><li>Tap it, or add it below. Sending it again replaces the old copy.</li></ol></section>`}
+        <ol><li>On your Mac, open the project and choose <b>Back up</b>.</li><li>${Capacitor.getPlatform() === 'android' ? 'Send the <b>.sgbackup</b> file to this phone with Quick Share, or save it to Google Drive.' : 'AirDrop the <b>.sgbackup</b> file to this phone, or save it to Files or Google Drive.'}</li><li>Tap it, or add it below. Sending it again replaces the old copy.</li></ol></section>`}
       <label class="add ${busy ? 'busy' : ''}">${icon('file')}<span>${busy ? 'Opening…' : 'Add from Files'}</span><input id="file" type="file" hidden ${busy ? 'disabled' : ''}></label>
     </main>`;
 }
@@ -273,8 +285,8 @@ app.addEventListener('click', async event => {
   const p = prefs();
   if (action === 'play') {
     if (waitingFor) releaseWait();
-    else if (loadedMode !== p.mode) void load(audio.currentTime, true);
-    else if (audio.paused) void audio.play().catch(() => toast('Tap Play to start.'));
+    else if (loadedMode !== p.mode) { await warmUp(); void load(audio.currentTime, true); }
+    else if (audio.paused) { await warmUp(); void audio.play().catch(() => toast('Tap Play to start.')); }
     else audio.pause();
   }
   if (action === 'prev' || action === 'next') step(action === 'next' ? 1 : -1);
@@ -324,6 +336,7 @@ settings.addEventListener('change', event => {
   if (!p.wait) { waitingFor = ''; releaseMicrophone(); listening = false; }
   else if (!p.autoContinue && listening) { stopListening(); listening = false; }
   if (p.autoContinue && waitingFor && !listening) void beginListening(waitingFor);
+  else if (target.value === 'listen') void warmUp();
   fillSettings(); persist(); render();
 });
 settings.addEventListener('click', event => { if (event.target === settings || (event.target as HTMLElement).closest('[data-close]')) settings.close(); });

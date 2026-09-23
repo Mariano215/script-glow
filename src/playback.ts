@@ -65,6 +65,9 @@ export type ListenPhase = 'calibrating' | 'quiet' | 'speaking' | 'done';
 export interface ListenState { phase: ListenPhase; floor: number; since: number; edge: number }
 const SETTLE_MS = 150, CALIBRATE_MS = 300, SPEECH_MS = 120, MIN_FLOOR = 0.015, MAX_FLOOR = 0.25;
 export const listenStart = (at: number): ListenState => ({ phase: 'calibrating', floor: 0, since: at, edge: at });
+// A room measured before the scene began (see prepareListening). An actor with the first line is
+// speaking from the moment the wait starts, so a floor measured then would be their own voice.
+export const listenFrom = (at: number, floor: number): ListenState => ({ phase: 'quiet', floor, since: at, edge: at });
 
 // One microphone level, between 0 and 1. `edge` is when the current run began: the run of
 // loud samples while quiet, the run of silent ones while speaking.
