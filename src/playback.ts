@@ -63,7 +63,7 @@ export function buildNext(step: number, pass: number, repeats: number, total: nu
 // later, which is far too late to come in on. Space and Continue keep working either way.
 export type ListenPhase = 'calibrating' | 'quiet' | 'speaking' | 'done';
 export interface ListenState { phase: ListenPhase; floor: number; since: number; edge: number }
-const CALIBRATE_MS = 300, SPEECH_MS = 120, MIN_FLOOR = 0.015, MAX_FLOOR = 0.25;
+const SETTLE_MS = 150, CALIBRATE_MS = 300, SPEECH_MS = 120, MIN_FLOOR = 0.015, MAX_FLOOR = 0.25;
 export const listenStart = (at: number): ListenState => ({ phase: 'calibrating', floor: 0, since: at, edge: at });
 
 // One microphone level, between 0 and 1. `edge` is when the current run began: the run of
@@ -74,6 +74,9 @@ export function listenStep(state: ListenState, level: number, at: number, holdMs
     // The room sets its own floor, so a fan or a street outside does not read as a line.
     // Capped, because an actor who speaks straight away would otherwise raise the floor
     // above their own voice and never be heard.
+    // A microphone that has just opened gives a loud burst before the room (seen on iOS at about
+    // 100 ms). Read into the floor, it lifts it to the cap and speech is never heard, so it is skipped.
+    if (at - state.since < SETTLE_MS) return state;
     if (at - state.since < CALIBRATE_MS) return { ...state, floor: Math.max(state.floor, level) };
     return { phase: 'quiet', floor: Math.min(Math.max(state.floor * 2, MIN_FLOOR), MAX_FLOOR), since: state.since, edge: at };
   }

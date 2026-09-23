@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Script Glow</string>
+    <string name="title_activity_main">Script Glow</string>
+    <string name="package_name">io.github.mariano215.scriptglow.companion</string>
+    <string name="custom_url_scheme">io.github.mariano215.scriptglow.companion</string>
+</resources>

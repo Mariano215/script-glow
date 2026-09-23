@@ -112,6 +112,13 @@ test('a spike is not speech, and a loud room raises its own floor', () => {
   assert.equal(run(500, [...noisy, ...steady(50, 0.3), ...steady(30, 0.05)]).phase, 'done', 'Speech over the fan is heard, and the fan is the silence it ends in');
 });
 
+test('the burst a microphone gives as it opens is not taken for the room', () => {
+  // Measured on iOS: silence, one loud frame, then the room. The burst must not set the floor,
+  // or ordinary speech never clears it and the wait is never ended.
+  const opening = [0, 0.36, 0.33, 0.07, 0.07, 0.07, 0.07, ...steady(9, 0.07)];
+  assert.equal(run(500, [...opening, ...steady(50, 0.2), ...steady(30, 0.05)]).phase, 'done');
+});
+
 test('the wait is only ended once', () => {
   const ended = run(500, [...room, ...steady(50, 0.2), ...steady(30, 0.003)]);
   assert.equal(listenStep(ended, 0.9, 10_000, 500).phase, 'done', 'A door slamming after the line does not reopen it');
