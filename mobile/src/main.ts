@@ -5,7 +5,18 @@ import { cueAt, cueRate, firstLetters, shouldWait, stepCue } from '../../src/pla
 import { prepareListening, releaseMicrophone, startListening, stopListening } from '../../src/listening.ts';
 import { readBackup, sceneTracks, type SceneTrack } from './backup.ts';
 import { getAudio, listProjects, removeProject, saveBackup, savePrefs, type Saved } from './store.ts';
+import nightDana from '../samples/night-shift-dana.sgbackup?url';
+import nightMichael from '../samples/night-shift-michael.sgbackup?url';
+import tableClaire from '../samples/wrong-table-claire.sgbackup?url';
+import tableBen from '../samples/wrong-table-ben.sgbackup?url';
 import './style.css';
+
+// Two short scenes ship with the app, each rendered once per role, so a new actor can rehearse
+// before they have a Mac project of their own. Stock voices only. Sources: mobile/samples/*.fountain.
+const SAMPLES = [
+  { title: 'Night Shift', blurb: 'Drama. An ER nurse and the brother who stayed away.', roles: [['Dana', nightDana], ['Michael', nightMichael]] },
+  { title: 'Wrong Table', blurb: 'Comedy. A blind date walks into a job interview.', roles: [['Claire', tableClaire], ['Ben', tableBen]] },
+];
 
 type View = { name: 'home' } | { name: 'project'; id: string } | { name: 'scene'; id: string; key: string };
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -224,6 +235,9 @@ function homeView() {
       ${projects.length ? `<h2 class="label">YOUR SCENES</h2><div class="cards">${cards}</div>` : `
       <section class="empty"><h1>Rehearse anywhere.</h1><p>Make the scene and its voices on your Mac. Send it here. Run lines on the train.</p>
         <ol><li>On your Mac, open the project and choose <b>Back up</b>.</li><li>${Capacitor.getPlatform() === 'android' ? 'Send the <b>.sgbackup</b> file to this phone with Quick Share, or save it to Google Drive.' : 'AirDrop the <b>.sgbackup</b> file to this phone, or save it to Files or Google Drive.'}</li><li>Tap it, or add it below. Sending it again replaces the old copy.</li></ol></section>`}
+      <h2 class="label">TRY A SAMPLE SCENE</h2>
+      <div class="cards">${SAMPLES.map(sample => `<div class="card sample"><strong>${sample.title}</strong><span>${sample.blurb}</span>
+        <div class="roles">${sample.roles.map(([role, url]) => `<button class="role" data-action="sample" data-url="${esc(url)}" ${busy ? 'disabled' : ''}>Play ${role}</button>`).join('')}</div></div>`).join('')}</div>
       <label class="add ${busy ? 'busy' : ''}">${icon('file')}<span>${busy ? 'Opening…' : 'Add from Files'}</span><input id="file" type="file" hidden ${busy ? 'disabled' : ''}></label>
     </main>`;
 }
@@ -275,6 +289,7 @@ app.addEventListener('click', async event => {
   if (!target) return;
   const { action, id = '', key = '' } = target.dataset;
   if (action === 'home') { view = { name: 'home' }; render(); return; }
+  if (action === 'sample') { await importBuffer(await (await fetch(target.dataset.url!)).arrayBuffer()); return; }
   if (action === 'project') { if (view.name === 'scene') leaveScene(); view = { name: 'project', id }; render(); return; }
   if (action === 'scene') { openScene(id, key); return; }
   if (action === 'remove') {

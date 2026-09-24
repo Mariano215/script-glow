@@ -45,6 +45,8 @@ button:focus-visible, select:focus-visible, input:focus-visible, label:has(:focu
 .empty b { color: var(--text); }
 .add { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 52px; border-radius: 12px; background: var(--ink); color: var(--on-ink); font-weight: 600; font-size: 16px; cursor: pointer; }
 .add.busy { opacity: .6; }
+.sample .roles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+.role { min-height: 44px; border-radius: 10px; background: var(--sage); color: var(--text); font-weight: 600; }
 .hint { font-size: 13px; line-height: 1.5; color: var(--soft); margin: 0; }
 .remove { margin-top: auto; min-height: 44px; color: #b3261e; font-weight: 600; }
 
