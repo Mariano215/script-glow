@@ -14,6 +14,8 @@ __pycache__/
 .env.*
 secrets.json
 *.sgbackup
+# The app's bundled sample scenes: stock voices only, written for Script Glow.
+!mobile/samples/*.sgbackup
 *.tmp
 .DS_Store
 Thumbs.db
