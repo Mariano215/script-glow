@@ -35,6 +35,10 @@ let audioUrl = '';
 let waitingFor = '';
 let resumedLine = '';
 let listening = false;
+// A microphone that failed once in this scene is not asked again until the scene is reopened or the
+// option is chosen again. The saved choice stays: a first-time permission prompt can fail the first
+// request even when the actor then allows it, and that must not quietly switch the option off.
+let micFailed = false;
 let activeLine = '';
 const revealed = new Set<string>();
 
@@ -116,8 +120,8 @@ async function beginListening(lineId: string) {
   try {
     await startListening(prefs().holdMs, () => { if (waitingFor === lineId) releaseWait(); });
   } catch (error) {
-    listening = false; prefs().autoContinue = false; persist();
-    toast(error instanceof Error ? error.message : 'The microphone could not be used, so listening is off.');
+    listening = false; micFailed = true;
+    toast(`The microphone could not be used${error instanceof Error ? ` (${error.message})` : ''}. Tap Continue for now. It tries again when you reopen the scene.`);
     tick();
   }
 }
@@ -126,11 +130,11 @@ async function beginListening(lineId: string) {
 // the first line is already talking while it opens, and the room is measured on their voice.
 async function warmUp() {
   const p = prefs();
-  if (!(p.mode === 'practice' && p.wait && p.autoContinue)) return;
+  if (!(p.mode === 'practice' && p.wait && p.autoContinue) || micFailed) return;
   try { await prepareListening(); }
   catch (error) {
-    p.autoContinue = false; persist();
-    toast(error instanceof Error ? error.message : 'The microphone could not be used, so listening is off.');
+    micFailed = true;
+    toast(`The microphone could not be used${error instanceof Error ? ` (${error.message})` : ''}. Tap Continue for now. It tries again when you reopen the scene.`);
   }
 }
 
@@ -138,7 +142,7 @@ function leaveScene() {
   audio.pause(); stopListening(); releaseMicrophone();
   if (audioUrl) URL.revokeObjectURL(audioUrl);
   audio.removeAttribute('src'); audio.load();
-  audioUrl = ''; loadedMode = null; waitingFor = ''; resumedLine = ''; listening = false; activeLine = ''; revealed.clear(); track = undefined;
+  audioUrl = ''; loadedMode = null; micFailed = false; waitingFor = ''; resumedLine = ''; listening = false; activeLine = ''; revealed.clear(); track = undefined;
 }
 
 function openScene(id: string, key: string) {
@@ -170,7 +174,7 @@ audio.addEventListener('timeupdate', () => {
   if (cue && cue.lineId !== resumedLine) resumedLine = '';
   if (!audio.paused && shouldWait(prefs(), cue, resumedLine)) {
     waitingFor = cue!.lineId; audio.pause();
-    if (prefs().autoContinue) void beginListening(waitingFor);
+    if (prefs().autoContinue && !micFailed) void beginListening(waitingFor);
   }
   tick();
 });
@@ -340,7 +344,7 @@ function fillSettings() {
   settings.querySelector<HTMLInputElement>(`[name="onLine"][value="${onLine}"]`)!.checked = true;
   settings.querySelector<HTMLSelectElement>('[name="rate"]')!.value = String(p.rate);
   settings.querySelector<HTMLSelectElement>('[name="holdMs"]')!.value = String(p.holdMs);
-  settings.querySelector<HTMLSelectElement>('[name="holdMs"]')!.disabled = !p.autoContinue;
+  settings.querySelector<HTMLLabelElement>('#hold-row')!.hidden = !(p.wait && p.autoContinue);
 }
 settings.addEventListener('change', event => {
   const target = event.target as HTMLInputElement;
@@ -350,6 +354,7 @@ settings.addEventListener('change', event => {
   if (target.name === 'rate' || target.name === 'holdMs') p[target.name] = Number(target.value);
   if (!p.wait) { waitingFor = ''; releaseMicrophone(); listening = false; }
   else if (!p.autoContinue && listening) { stopListening(); listening = false; }
+  if (target.value === 'listen') micFailed = false;
   if (p.autoContinue && waitingFor && !listening) void beginListening(waitingFor);
   else if (target.value === 'listen') void warmUp();
   fillSettings(); persist(); render();
