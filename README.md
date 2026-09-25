@@ -71,6 +71,46 @@ cd script-glow
 npm install
 ```
 
+### Run with Docker
+
+One command installs the app, the Chatterbox voice server and the four free stock voices. It works on any computer with [Docker](https://docs.docker.com/get-docker/), with or without a graphics card.
+
+```sh
+git clone https://github.com/Mariano215/script-glow.git
+cd script-glow
+docker compose up -d
+```
+
+Open http://localhost:3001. The first build takes several minutes. The first line of speech takes longer again, because the voice model (about 3 GB) downloads then.
+
+To add the optional services, name them in a file called `.env` in the `script-glow` folder, then run `docker compose up -d` again:
+
+| Line in `.env` | Adds |
+| --- | --- |
+| `COMPOSE_PROFILES=listen` | Whisper, for **Check what I said** (downloads about 3 GB once) |
+| `COMPOSE_PROFILES=ai` | Ollama with Gemma 4 (`gemma4:e2b`), for AI voice suggestions from character names. To use another model, add a second line such as `OLLAMA_MODEL=gemma4:e4b`. |
+| `COMPOSE_PROFILES=listen,ai` | Both |
+
+Docker reads `.env` on every command, so `docker compose restart` and `docker compose down` include these services too.
+
+Script Glow finds every service by itself, so the welcome screen does not ask for an address. If you change an address in **Settings**, keep `127.0.0.1`: inside Docker, that is where every service is.
+
+API keys for hosted voices and AI work the same as in the desktop app: add them in **Settings**. If you only use hosted services, `docker compose up -d app` starts the app alone.
+
+Your projects, settings, keys and voices stay in Docker volumes, so they survive a rebuild or an update (`git pull`, then `docker compose up -d --build`).
+
+**Without a graphics card, local voices are slow.** On a laptop CPU, one line of Chatterbox speech takes about 10 to 20 seconds, and **Check what I said** takes several seconds per line. Script Glow keeps every line it makes, so the second rehearsal of a scene starts at once. Render a scene before you rehearse it, not during. For fast voices without a graphics card, use a hosted voice service instead. Docker on a Mac never uses the graphics chip, so a Mac always runs at CPU speed.
+
+**Give Docker enough memory.** The voice server needs about 4 GB, Whisper about 2.5 GB and Gemma 4 about 3 GB. With 8 GB, run the voices plus one optional service. With both optional services, set Docker's memory to 12 GB or more (Docker Desktop: **Settings > Resources**). If Docker runs out of memory, it stops a service and starts it again, and the line you were making fails.
+
+**With an NVIDIA graphics card** (Linux with the NVIDIA Container Toolkit, or Windows with Docker Desktop on WSL2):
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+```
+
+Docker only publishes the app to this computer (`127.0.0.1:3001`). The voice, Whisper and Ollama servers are not reachable from outside.
+
 ## Set up voices
 
 Pick one:
@@ -127,6 +167,7 @@ Environment variables:
 
 | Variable | Meaning |
 | --- | --- |
+| `HOST` | Address the app listens on (default `127.0.0.1`). The Docker image sets `0.0.0.0`. The app still answers only requests addressed to a loopback name. |
 | `PORT` | App port (default `3001`). A second copy on another port still shares `data/` and `.cache/`. |
 | `SCRIPT_GLOW_CONFIG` | Path of the connection profile (default `data/connections.json`). |
 | `SCRIPT_GLOW_SECRETS` | Path of the key file (default in your user settings folder, see below). |
@@ -289,6 +330,7 @@ verification/  Browser (Playwright) and live-service checks
 scripts/       Voice reference installers and manifests, built-in voice file preparation, license notices
 public/        Logo, bundled fonts, voice preview clips
 docs/          User guides and README media
+Dockerfile, docker-compose*.yml  The Docker install (app image; voice-server/Dockerfile builds Chatterbox)
 ```
 
 ### Documentation
