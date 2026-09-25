@@ -1,0 +1,78 @@
+# Run with Docker: see README.md. The services share the app's network, so the 127.0.0.1
+# defaults in Script Glow reach them with no settings and no voice token.
+services:
+  app:
+    build: .
+    image: script-glow
+    ports: ["127.0.0.1:3001:3001"]
+    volumes: [data:/data]
+    restart: unless-stopped
+
+  chatterbox:
+    build: voice-server
+    # Shares the app's network, so it must restart with the app.
+    network_mode: service:app
+    depends_on:
+      app: { condition: service_started, restart: true }
+    volumes: [voices:/voices, hf-cache:/hf-cache]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8095/health')"]
+      interval: 10s
+      start_period: 60s
+
+  # Puts the four free stock voices in the voices volume, then exits.
+  voices-init:
+    image: script-glow
+    user: root
+    network_mode: service:app
+    volumes: [voices:/voices]
+    command: ["node", "scripts/install-stock-voices.mjs", "/voices"]
+    depends_on:
+      chatterbox: { condition: service_healthy }
+
+  # Optional: "Check what I said". Start with --profile listen.
+  whisper:
+    image: ghcr.io/speaches-ai/speaches:0.8.3-cpu
+    profiles: [listen]
+    network_mode: service:app
+    depends_on:
+      app: { condition: service_started, restart: true }
+    # int8 keeps the model near 2 GB of memory on a CPU. The GPU file switches to float16.
+    environment: [UVICORN_PORT=8010, ENABLE_UI=false, WHISPER__COMPUTE_TYPE=int8]
+    volumes: [whisper-cache:/home/ubuntu/.cache/huggingface]
+    restart: unless-stopped
+
+  # Downloads the Whisper model Script Glow asks for (about 3 GB) once, then exits.
+  whisper-pull:
+    image: ghcr.io/speaches-ai/speaches:0.8.3-cpu
+    profiles: [listen]
+    volumes: [whisper-cache:/home/ubuntu/.cache/huggingface]
+    entrypoint: ["huggingface-cli", "download", "Systran/faster-whisper-large-v3"]
+
+  # Optional: AI voice suggestions from character names. Start with --profile ai.
+  ollama:
+    image: ollama/ollama:0.34.4
+    profiles: [ai]
+    network_mode: service:app
+    depends_on:
+      app: { condition: service_started, restart: true }
+    volumes: [ollama:/root/.ollama]
+    restart: unless-stopped
+
+  # Downloads the model once, then exits. Change it with OLLAMA_MODEL=gemma4:e4b.
+  ollama-pull:
+    image: ollama/ollama:0.34.4
+    profiles: [ai]
+    network_mode: service:app
+    entrypoint: ["sh", "-c", "until ollama list >/dev/null 2>&1; do sleep 1; done; ollama pull $${OLLAMA_MODEL}"]
+    environment:
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:e2b}
+    depends_on: [ollama]
+
+volumes:
+  data:
+  voices:
+  hf-cache:
+  whisper-cache:
+  ollama:

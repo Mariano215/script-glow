@@ -1,0 +1,14 @@
+# NVIDIA GPU. Use with: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# Needs the NVIDIA Container Toolkit (Linux) or Docker Desktop with WSL2 (Windows).
+services:
+  chatterbox:
+    build:
+      context: voice-server
+      args: [TORCH_INDEX=https://download.pytorch.org/whl/cu124]
+    gpus: all
+  whisper:
+    image: ghcr.io/speaches-ai/speaches:0.8.3-cuda-12.6.3
+    environment: [UVICORN_PORT=8010, ENABLE_UI=false, WHISPER__COMPUTE_TYPE=float16]
+    gpus: all
+  ollama:
+    gpus: all

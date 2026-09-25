@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Run with Docker.** `docker compose up -d` installs the app, the Chatterbox voice server and the stock voices, with no graphics card needed. Whisper and Ollama with Gemma 4 are optional. An override file adds NVIDIA support. See "Run with Docker" in the README.
 - **Changing one character's voice no longer marks other scenes as needing new audio.** A scene's audio now depends only on the voices heard in it.
 - **Saved audio uses a short key.** Each render was saved under its whole script text, up to 1.2 MB for a full script, which pushed older audio out of a project. Audio made before this change still plays.
 - **The old Chatterbox cache option is gone.** "Reuse audio made by an older Script Glow" could play audio made by one voice server for another. Lines are voiced again once.

@@ -13,8 +13,10 @@ try {
   connections = await loadConnections(connectionsFile);
   if (await moveOldSecrets()) console.log(`API keys moved to ${SECRETS_FILE}`);
 } catch (error) { stop(error.message); }
+// HOST exists for Docker, where 0.0.0.0 lets the published port reach the app. Requests must still name a loopback host.
+const host = process.env.HOST || '127.0.0.1';
 // Express 5 passes a listen failure (such as a port in use) to this callback instead of throwing.
-const server = createApp({ connections, connectionsFile, firstRunScreen: true }).listen(port, '127.0.0.1', error => {
+const server = createApp({ connections, connectionsFile, firstRunScreen: true }).listen(port, host, error => {
   if (error) { console.error(`Script Glow could not start on port ${port}: ${error.message}`); process.exit(1); }
   console.log(`Script Glow: http://127.0.0.1:${server.address().port} · ${connections.name}`);
 });

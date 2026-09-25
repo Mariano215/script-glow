@@ -1,0 +1,14 @@
+node_modules
+dist
+data
+.cache
+models
+release
+artifacts
+mobile
+verification
+.git
+.reviews
+.superpowers
+voice-server
+**/.DS_Store

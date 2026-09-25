@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#192824">
+  <title>Script Glow</title>
+</head>
+<body>
+  <div id="app"></div>
+  <audio id="audio" preload="auto" playsinline></audio>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="settings" class="sheet" aria-labelledby="settings-title">
+    <div class="grip"></div>
+    <div class="sheet-head"><h2 id="settings-title">Rehearsal</h2><button class="done" data-close>Done</button></div>
+    <div class="group">
+      <label class="row"><span><strong>Hide my lines</strong><small>In practice, tap a line to peek</small></span><input type="checkbox" name="hide" class="switch"></label>
+    </div>
+    <fieldset class="group">
+      <legend class="label">WHEN MY LINE COMES</legend>
+      <label class="row"><span><strong>Keep playing</strong><small>My line is a silence of the same length</small></span><input type="radio" name="onLine" value="play"></label>
+      <label class="row"><span><strong>Wait, I tap Continue</strong><small>The scene holds until I tap</small></span><input type="radio" name="onLine" value="tap"></label>
+      <label class="row"><span><strong>Wait, go on when I stop talking</strong><small>Listens to the microphone level only. Nothing is recorded.</small></span><input type="radio" name="onLine" value="listen"></label>
+      <label class="row" id="hold-row"><span><strong>Pause before going on</strong><small>How long I can stop mid-line before it goes on</small></span><select name="holdMs"><option value="500">0.5 s</option><option value="1000">1 s</option><option value="1500">1.5 s</option><option value="2000">2 s</option><option value="2500">2.5 s</option><option value="3000">3 s</option><option value="3500">3.5 s</option><option value="4000">4 s</option><option value="4500">4.5 s</option><option value="5000">5 s</option></select></label>
+    </fieldset>
+    <div class="group">
+      <label class="row"><span><strong>Partner speed</strong><small>My silent lines always run at 1x</small></span><select name="rate"><option value="0.75">0.75x</option><option value="1">1x</option><option value="1.25">1.25x</option><option value="1.5">1.5x</option></select></label>
+    </div>
+    <p class="hint">Voices, cast and script edits happen on your Mac. Send the project again to update it here.</p>
+  </dialog>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
