@@ -15,7 +15,12 @@ By default everything runs on your own machine, and scripts and audio are not se
 
 <p align="center"><img src="docs/media/readme-selftape.gif" alt="Recording a self-tape: the actor on camera, the REC light on, and her lines beside the camera" width="720"></p>
 
-<p align="center"><strong><a href="https://youtu.be/z8HUXr_tyC0">Watch the 0.2.0 walkthrough</a></strong> · <a href="https://youtu.be/aoRAlPY04Is">0.1.0 walkthrough</a></p>
+<p align="center">
+  <a href="https://youtu.be/FQ2KYPoK9kY"><img src="https://img.youtube.com/vi/FQ2KYPoK9kY/maxresdefault.jpg" alt="Watch the Script Glow walkthrough on YouTube" width="380"></a>
+  <a href="https://youtu.be/4fZuSvrw_ZE"><img src="https://img.youtube.com/vi/4fZuSvrw_ZE/maxresdefault.jpg" alt="Watch how to install Script Glow with Docker on YouTube" width="380"></a>
+</p>
+
+<p align="center"><strong><a href="https://youtu.be/FQ2KYPoK9kY">Watch the walkthrough</a></strong> · <strong><a href="https://youtu.be/4fZuSvrw_ZE">Install with Docker</a></strong> · Older: <a href="https://youtu.be/z8HUXr_tyC0">0.2.0 walkthrough</a> · <a href="https://youtu.be/aoRAlPY04Is">0.1.0 walkthrough</a></p>
 
 ## Features
 
@@ -74,6 +79,8 @@ npm install
 ### Run with Docker
 
 One command installs the app, the Chatterbox voice server and the four free stock voices. It works on any computer with [Docker](https://docs.docker.com/get-docker/), with or without a graphics card.
+
+[Watch the Docker install video](https://youtu.be/4fZuSvrw_ZE) to see each step.
 
 ```sh
 git clone https://github.com/Mariano215/script-glow.git
