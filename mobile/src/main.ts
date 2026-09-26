@@ -66,7 +66,7 @@ async function importBuffer(buffer: ArrayBuffer) {
   busy = true; render();
   try {
     const backup = await readBackup(buffer);
-    if (!backup.project.renders.length) throw new Error('This project has no audio yet. Press Play on your Mac to make it, then back it up again.');
+    if (!backup.project.renders.length) throw new Error('This project has no audio yet. Press Play in Script Glow on your computer to make it, then back it up again.');
     const previous = projects.find(item => item.project.id === backup.project.id);
     await saveBackup(backup, previous);
     projects = await listProjects();
@@ -99,7 +99,7 @@ async function load(at: number, play: boolean) {
   if (!saved || !track) return;
   const mode = prefs().mode;
   const blob = await getAudio(saved.project.id, mode === 'practice' ? track.practice : track.full);
-  if (!blob) { toast('This scene\'s audio is missing. Send the project again from your Mac.'); return; }
+  if (!blob) { toast('This scene\'s audio is missing. Send the project again from your computer.'); return; }
   if (audioUrl) URL.revokeObjectURL(audioUrl);
   audioUrl = URL.createObjectURL(blob);
   audio.src = audioUrl; loadedMode = mode; audio.loop = prefs().loop;
@@ -237,8 +237,8 @@ function homeView() {
   return `<header class="home-bar"><div class="brand">script<span>glow</span></div></header>
     <main class="home">
       ${projects.length ? `<h2 class="label">YOUR SCENES</h2><div class="cards">${cards}</div>` : `
-      <section class="empty"><h1>Rehearse anywhere.</h1><p>Make the scene and its voices on your Mac. Send it here. Run lines on the train.</p>
-        <ol><li>On your Mac, open the project and choose <b>Back up</b>.</li><li>${Capacitor.getPlatform() === 'android' ? 'Send the <b>.sgbackup</b> file to this phone with Quick Share, or save it to Google Drive.' : 'AirDrop the <b>.sgbackup</b> file to this phone, or save it to Files or Google Drive.'}</li><li>Tap it, or add it below. Sending it again replaces the old copy.</li></ol></section>`}
+      <section class="empty"><h1>Rehearse anywhere.</h1><p>Make the scene and its voices on your computer. Send it here. Run lines on the train.</p>
+        <ol><li>In Script Glow on your computer, open the project and choose <b>Back up</b>.</li><li>${Capacitor.getPlatform() === 'android' ? 'Send the <b>.sgbackup</b> file to this phone with Quick Share, or save it to Google Drive.' : 'AirDrop the <b>.sgbackup</b> file to this phone, or save it to Files or Google Drive.'}</li><li>Tap it, or add it below. Sending it again replaces the old copy.</li></ol></section>`}
       <h2 class="label">TRY A SAMPLE SCENE</h2>
       <div class="cards">${SAMPLES.map(sample => `<div class="card sample"><strong>${sample.title}</strong><span>${sample.blurb}</span>
         <div class="roles">${sample.roles.map(([role, url]) => `<button class="role" data-action="sample" data-url="${esc(url)}" ${busy ? 'disabled' : ''}>Play ${role}</button>`).join('')}</div></div>`).join('')}</div>
@@ -254,7 +254,7 @@ function projectView(id: string) {
     <main class="home">
       <h2 class="label">SCENES WITH AUDIO</h2>
       <div class="cards">${tracks.map(item => `<button class="card" data-action="scene" data-id="${esc(id)}" data-key="${esc(item.key)}"><strong>${esc(item.title)}</strong><span>${item.cues.length} lines · ${time(item.duration)}</span></button>`).join('')}</div>
-      <p class="hint">Only scenes you have played on your Mac come across, because the voices are made there.</p>
+      <p class="hint">Only scenes you have played on your computer come across, because the voices are made there.</p>
       <button class="remove" data-action="remove" data-id="${esc(id)}">Remove from this phone</button>
     </main>`;
 }
@@ -297,7 +297,7 @@ app.addEventListener('click', async event => {
   if (action === 'project') { if (view.name === 'scene') leaveScene(); view = { name: 'project', id }; render(); return; }
   if (action === 'scene') { openScene(id, key); return; }
   if (action === 'remove') {
-    if (!confirm('Remove this project and its audio from the phone? Your Mac keeps its copy.')) return;
+    if (!confirm('Remove this project and its audio from the phone? Your computer keeps its copy.')) return;
     await removeProject(id); projects = await listProjects(); view = { name: 'home' }; render(); return;
   }
   if (!saved || !track) return;
