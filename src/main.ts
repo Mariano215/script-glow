@@ -9,7 +9,7 @@ import './studio.css';
 import { highlightDefaults, readHighlights, highlightedCharacter, lineHidden, safeColor, type HighlightPreferences } from './highlights';
 import { parseScript, sayItLike, sceneIncludes, spokenLines, SAMPLE, type Scene, type ScriptLine } from './parser';
 import { buildEnd, buildNext, buildTargets, cueAt, cueRate, firstLetters, lineMatch, loopRange, shouldWait, stepCue, type Cue, type LineVerdict } from './playback';
-import { releaseMicrophone, startListening, stopListening } from './listening';
+import { keepAwake, releaseMicrophone, startListening, stopListening } from './listening';
 import { browserMp4, browserMp4Type, castingFileName, castingFit, countBeep, monoWav, setReaderLevel, mixerState, openRecorder, resumeMixer, takeClock, takeContainer, takeLabel, takeNeedsConverting, type Take, type TakeRecorder } from './selftape';
 import { inferCharacters, assignCast, resolvedGender, voiceGenders, voiceIdentity, voiceOwners, voicesFor, validGuesses, withNameGuesses, type NameGuesses, type GenderChoice } from './casting';
 import { voiceCatalog } from './voice-catalog';
@@ -2064,6 +2064,7 @@ function updatePlaybackStatus() {
   status.textContent = recorder?.recording ? 'Recording a take. The scene plays by itself.' : waitingFor ? `Your turn. ${touchFirst() ? 'Tap' : 'Press Space or'} Continue when you are done` : audio.paused ? 'Ready to rehearse' : cue ? prefs.mode === 'practice' && cue.character === prefs.role ? 'Your turn — speak your line' : `${pretty(cue.character)} is speaking` : 'Ready for the next cue';
 }
 function updatePlayButton() {
+  keepAwake(!audio.paused || !!waitingFor);
   const button = document.querySelector('[data-action="play"]');
   if (button) {
     // While the scene waits for your line, the Play button says what it will do.
