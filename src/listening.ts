@@ -122,3 +122,19 @@ export function releaseMicrophone(): void {
   void context?.close();
   stream = null; context = null; analyser = null; source = null; samples = null; roomFloor = undefined;
 }
+
+// The screen stays on while a scene runs, and through the pause where it waits for the actor's
+// line. The system drops the lock whenever the page is hidden, so it is taken again on return.
+// Without a secure context (a phone on plain http to this computer) there is no lock and no error.
+let wakeLock: WakeLockSentinel | null = null, wantAwake = false, watching = false;
+export function keepAwake(on: boolean) {
+  wantAwake = on;
+  if (!watching) { watching = true; document.addEventListener('visibilitychange', () => { if (wantAwake && document.visibilityState === 'visible') keepAwake(true); }); }
+  if (!on) { void wakeLock?.release(); wakeLock = null; return; }
+  if (wakeLock || !navigator.wakeLock) return;
+  navigator.wakeLock.request('screen').then(lock => {
+    if (!wantAwake || wakeLock) { void lock.release(); return; }
+    wakeLock = lock;
+    lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+  }).catch(() => {});
+}

@@ -2,7 +2,7 @@ import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem } from '@capacitor/filesystem';
 import { cueAt, cueRate, firstLetters, shouldWait, stepCue } from '../../src/playback.ts';
-import { prepareListening, releaseMicrophone, startListening, stopListening } from '../../src/listening.ts';
+import { keepAwake, prepareListening, releaseMicrophone, startListening, stopListening } from '../../src/listening.ts';
 import { readBackup, sceneTracks, type SceneTrack } from './backup.ts';
 import { getAudio, listProjects, removeProject, saveBackup, savePrefs, type Saved } from './store.ts';
 import nightDana from '../samples/night-shift-dana.sgbackup?url';
@@ -178,7 +178,7 @@ audio.addEventListener('timeupdate', () => {
   }
   tick();
 });
-for (const event of ['play', 'pause', 'ended']) audio.addEventListener(event, () => tick());
+for (const event of ['play', 'pause', 'ended']) audio.addEventListener(event, () => { keepAwake(!audio.paused || !!waitingFor); tick(); });
 
 // The cheap update on every time step: no re-render, so the script does not jump under a finger.
 function tick() {
