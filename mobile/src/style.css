@@ -6,13 +6,15 @@
 :root {
   --ink: #192824; --panel: #25342d; --line: #3b4741; --on-ink: #e4e9df; --on-ink-soft: #b9c4bb;
   --paper: #f5f4ef; --card: #ffffff; --border: #e1e3db; --sage: #e7eee5; --text: #25332e; --soft: #5f665f;
-  --amber: #eabd73; --amber-ink: #8a5a14; --highlight: #fbf1de;
+  --amber: #eabd73; --amber-ink: #8a5a14;
   color-scheme: light; font-family: 'DM Sans', system-ui, sans-serif; color: var(--text); background: var(--paper);
   -webkit-text-size-adjust: 100%;
 }
+/* Dark follows the phone unless Settings > Appearance picks one (main.ts applyPhone sets data-theme). */
 @media (prefers-color-scheme: dark) {
-  :root { --paper: #111b18; --card: #1c2824; --border: #2c3a34; --sage: #22302a; --text: #e4e9df; --soft: #a3aea5; --amber-ink: #eabd73; --highlight: #2e2a1f; color-scheme: dark; }
+  :root:not([data-theme="light"]) { --paper: #111b18; --card: #1c2824; --border: #2c3a34; --sage: #22302a; --text: #e4e9df; --soft: #a3aea5; --amber-ink: #eabd73; color-scheme: dark; }
 }
+:root[data-theme="dark"] { --paper: #111b18; --card: #1c2824; --border: #2c3a34; --sage: #22302a; --text: #e4e9df; --soft: #a3aea5; --amber-ink: #eabd73; color-scheme: dark; }
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100dvh; background: var(--paper); -webkit-tap-highlight-color: transparent; }
 button, select, input { font: inherit; color: inherit; }
@@ -24,7 +26,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, label:has(:focu
 #app.stage .script { min-height: 0; }
 
 .home-bar, .bar { display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top) + 10px) 12px 10px; }
-.home-bar { padding-inline: 20px; }
+.home-bar { padding-inline: 20px 8px; justify-content: space-between; }
 .brand { font-size: 25px; letter-spacing: -1.1px; font-weight: 500; color: var(--text); }
 .brand span { color: #b07a26; font-weight: 400; }
 .bar-title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -56,12 +58,14 @@ button:focus-visible, select:focus-visible, input:focus-visible, label:has(:focu
 
 .script { flex: 1; overflow-y: auto; padding: 8px 20px 24px; display: flex; flex-direction: column; gap: 4px; font-family: 'Libre Baskerville', Georgia, serif; }
 .heading { padding: 0 14px; font-family: 'DM Sans', sans-serif; font-size: 12px; letter-spacing: 1.8px; font-weight: 600; color: var(--soft); margin: 8px 0 2px; text-transform: uppercase; }
-.direction { padding: 0 14px; font-size: 14px; font-style: italic; color: var(--soft); line-height: 1.55; margin: 4px 0 8px; }
+.direction { padding: 0 14px; font-size: calc(var(--script-size, 17px) * .82); font-style: italic; color: var(--soft); line-height: 1.55; margin: 4px 0 8px; }
 .line { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 12px 14px; border-radius: 12px; border: 1.5px solid transparent; }
-.line.active { background: var(--highlight); border-color: var(--amber); }
+/* Colors come from the phone's Settings (main.ts applyLook); the tint is the color at low alpha so it reads in both themes. */
+.line.mine { background: var(--mine-bg); box-shadow: inset 4px 0 var(--mine-color); }
+.line.active { background: var(--spoken-bg); border-color: var(--spoken-color); }
 .who { font-family: 'DM Sans', sans-serif; font-size: 12px; letter-spacing: 1.6px; font-weight: 600; color: var(--soft); }
 .mine .who { color: var(--amber-ink); }
-.text { font-size: 17px; line-height: 1.5; }
+.text { font-size: var(--script-size, 17px); line-height: 1.5; }
 .hidden .text { font-family: 'DM Sans', sans-serif; font-size: 14px; color: var(--soft); padding: 8px 12px; border: 1.5px dashed var(--border); border-radius: 8px; }
 .hinted .text { letter-spacing: 2px; }
 
@@ -82,7 +86,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, label:has(:focu
 .play { width: 68px; height: 68px; border-radius: 34px; background: var(--amber); color: var(--ink); display: flex; align-items: center; justify-content: center; font-weight: 600; }
 .play.continue { width: auto; padding: 0 22px; border-radius: 34px; font-size: 16px; }
 
-.sheet { width: 100%; max-width: 560px; margin: auto auto 0; border: 0; border-radius: 22px 22px 0 0; padding: 10px 20px calc(env(safe-area-inset-bottom) + 24px); background: var(--paper); color: var(--text); }
+.sheet { max-height: 92dvh; overflow-y: auto; width: 100%; max-width: 560px; margin: auto auto 0; border: 0; border-radius: 22px 22px 0 0; padding: 10px 20px calc(env(safe-area-inset-bottom) + 24px); background: var(--paper); color: var(--text); }
 .sheet::backdrop { background: rgba(17, 27, 24, .55); }
 .grip { width: 40px; height: 5px; border-radius: 3px; background: var(--border); margin: 0 auto 8px; }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; }
@@ -99,6 +103,11 @@ fieldset.group legend { padding: 12px 16px 0; float: left; width: 100%; margin: 
 .row strong { font-weight: 600; }
 .row small { font-size: 13px; color: var(--soft); }
 .row select { border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; background: var(--paper); min-height: 36px; }
+.row input[type=color] { width: 52px; height: 36px; padding: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--paper); flex-shrink: 0; }
+button.row { width: 100%; text-align: left; }
+.reset { color: var(--amber-ink); font-weight: 600; }
+.small-remove { min-height: 36px; padding: 0 12px; border-radius: 8px; color: #b3261e; font-weight: 600; }
+.small-remove[hidden] { display: none; }
 .switch { appearance: none; -webkit-appearance: none; width: 51px; height: 31px; border-radius: 16px; background: #c9cdc2; position: relative; margin: 0; flex-shrink: 0; transition: background .15s; }
 .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 14px; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .2); transition: left .15s; }
 .switch:checked { background: #2f6b4f; }

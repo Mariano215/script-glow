@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Phone app: your lines are highlighted again, in colors you pick.** A gear on the home screen opens Settings for every project on the phone: colors for your lines and for the line playing now, text size, light or dark, stage directions on or off, keep the screen on, a countdown before Play, a saved rehearsal setup for new projects, and how much space each project uses.
+
 ## 0.5.1 (2026-09-27)
 
 - **The screen stays awake while a scene plays.** It no longer dims or locks while the audio plays or while the scene waits for your line. It can sleep again once you pause, the scene ends or you leave it.

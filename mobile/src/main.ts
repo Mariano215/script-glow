@@ -3,8 +3,9 @@ import { Capacitor } from '@capacitor/core';
 import { Filesystem } from '@capacitor/filesystem';
 import { cueAt, cueRate, firstLetters, shouldWait, stepCue } from '../../src/playback.ts';
 import { keepAwake, prepareListening, releaseMicrophone, startListening, stopListening } from '../../src/listening.ts';
+import { highlightDefaults, safeColor } from '../../src/highlights.ts';
 import { readBackup, sceneTracks, type SceneTrack } from './backup.ts';
-import { getAudio, listProjects, removeProject, saveBackup, savePrefs, type Saved } from './store.ts';
+import { audioSize, getAudio, listProjects, pick, removeProject, saveBackup, savePrefs, type Rehearsal, type Saved } from './store.ts';
 import nightDana from '../samples/night-shift-dana.sgbackup?url';
 import nightMichael from '../samples/night-shift-michael.sgbackup?url';
 import tableClaire from '../samples/wrong-table-claire.sgbackup?url';
@@ -22,6 +23,7 @@ type View = { name: 'home' } | { name: 'project'; id: string } | { name: 'scene'
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const audio = document.querySelector<HTMLAudioElement>('#audio')!;
 const settings = document.querySelector<HTMLDialogElement>('#settings')!;
+const appSettings = document.querySelector<HTMLDialogElement>('#app-settings')!;
 let projects: Saved[] = [];
 let view: View = { name: 'home' };
 let busy = false;
@@ -40,6 +42,9 @@ let listening = false;
 // request even when the actor then allows it, and that must not quietly switch the option off.
 let micFailed = false;
 let activeLine = '';
+// Seconds left before Play starts the scene (Settings > Countdown). Nought when no countdown runs.
+let countLeft = 0;
+let countTimer: ReturnType<typeof setInterval> | undefined;
 const revealed = new Set<string>();
 
 const esc = (text: string) => text.replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`);
@@ -50,6 +55,7 @@ const icons: Record<string, string> = {
   prev: '<path d="M6 5v14M19 5l-9 7 9 7z"/>', next: '<path d="M18 5v14M5 5l9 7-9 7z"/>', play: '<path d="M8 5l11 7-11 7z" fill="currentColor"/>',
   pause: '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/>',
   loop: '<path d="M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4"/>', mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
   file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 11v6M9 14h6"/>',
 };
 const icon = (name: string, size = 22) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
@@ -60,6 +66,82 @@ function toast(message: string) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { box.hidden = true; }, 5000);
 }
 
+// ---- Phone settings ----
+// One set for every project, kept on this phone only (the rehearsal sheet is per project).
+// localStorage can throw or come back empty (cleared site data); the defaults cover both.
+const SIZES = [15, 17, 20, 24];
+const PHONE = { mine: highlightDefaults.characterColor, spoken: highlightDefaults.spokenColor, size: 17, theme: 'system', directions: true, awake: true, countdown: 0, defaults: null as Rehearsal | null };
+type Phone = typeof PHONE;
+let phone: Phone = { ...PHONE };
+try {
+  const raw = JSON.parse(localStorage.getItem('phone') ?? '{}');
+  phone = {
+    mine: safeColor(raw.mine, PHONE.mine), spoken: safeColor(raw.spoken, PHONE.spoken),
+    size: SIZES.includes(raw.size) ? raw.size : PHONE.size,
+    theme: ['system', 'light', 'dark'].includes(raw.theme) ? raw.theme : PHONE.theme,
+    directions: typeof raw.directions === 'boolean' ? raw.directions : PHONE.directions,
+    awake: typeof raw.awake === 'boolean' ? raw.awake : PHONE.awake,
+    countdown: [0, 3, 5].includes(raw.countdown) ? raw.countdown : PHONE.countdown,
+    defaults: raw.defaults && typeof raw.defaults === 'object' ? pick(raw.defaults) : null,
+  };
+} catch { /* defaults */ }
+
+// The tint is the color with an alpha byte (2e, about 18%), so any pick reads on light and dark paper.
+function applyPhone() {
+  const root = document.documentElement;
+  root.style.setProperty('--mine-color', phone.mine); root.style.setProperty('--mine-bg', `${phone.mine}2e`);
+  root.style.setProperty('--spoken-color', phone.spoken); root.style.setProperty('--spoken-bg', `${phone.spoken}2e`);
+  root.style.setProperty('--script-size', `${phone.size}px`);
+  if (phone.theme === 'system') delete root.dataset.theme; else root.dataset.theme = phone.theme;
+  keepAwake(phone.awake && (!audio.paused || !!waitingFor));
+  try { localStorage.setItem('phone', JSON.stringify(phone)); } catch { /* still applies for this session */ }
+}
+
+const megabytes = (bytes: number) => `${(bytes / 1e6).toFixed(bytes < 1e7 ? 1 : 0)} MB`;
+async function fillPhone() {
+  const field = <T extends HTMLElement = HTMLInputElement>(name: string) => appSettings.querySelector<T>(`[name="${name}"]`)!;
+  field('mine').value = phone.mine; field('spoken').value = phone.spoken;
+  field<HTMLSelectElement>('size').value = String(phone.size); field<HTMLSelectElement>('theme').value = phone.theme;
+  field<HTMLSelectElement>('countdown').value = String(phone.countdown);
+  field('directions').checked = phone.directions; field('awake').checked = phone.awake;
+  appSettings.querySelector('#defaults-note')!.textContent = phone.defaults ? 'Your saved setup' : 'The settings sent from your computer';
+  appSettings.querySelector<HTMLButtonElement>('[data-forget]')!.hidden = !phone.defaults;
+  const sizes = await Promise.all(projects.map(item => audioSize(item.project.id)));
+  appSettings.querySelector('#storage')!.innerHTML = projects.map((item, index) => `<div class="row"><span><strong>${esc(item.prefs.name)}</strong><small>${megabytes(sizes[index])}</small></span><button class="small-remove" data-remove="${esc(item.project.id)}">Remove</button></div>`).join('')
+    || '<div class="row"><span><small>No projects on this phone yet.</small></span></div>';
+}
+function openPhone() { void fillPhone(); appSettings.showModal(); }
+
+// Both events: a color picker sends input as it moves, some web views send only change for a select.
+function onPhoneSetting(event: Event) {
+  const target = event.target as HTMLInputElement;
+  const name = target.name;
+  if (name === 'mine' || name === 'spoken') phone[name] = safeColor(target.value, PHONE[name]);
+  else if (name === 'size' || name === 'countdown') phone[name] = Number(target.value);
+  else if (name === 'theme') phone.theme = target.value;
+  else if (name === 'directions' || name === 'awake') phone[name] = target.checked;
+  else return;
+  applyPhone();
+  if (name === 'directions' && view.name === 'scene') render();
+}
+appSettings.addEventListener('input', onPhoneSetting);
+appSettings.addEventListener('change', onPhoneSetting);
+appSettings.addEventListener('click', async event => {
+  const target = event.target as HTMLElement;
+  if (target.closest('[data-reset]')) { phone.mine = PHONE.mine; phone.spoken = PHONE.spoken; applyPhone(); void fillPhone(); }
+  if (target.closest('[data-forget]')) { phone.defaults = null; applyPhone(); void fillPhone(); }
+  const remove = target.closest<HTMLElement>('[data-remove]');
+  if (remove && await removeFromPhone(remove.dataset.remove!)) void fillPhone();
+});
+
+async function removeFromPhone(id: string) {
+  if (!confirm('Remove this project and its audio from the phone? Your computer keeps its copy.')) return false;
+  if (saved?.project.id === id && view.name === 'scene') leaveScene();
+  await removeProject(id); projects = await listProjects();
+  if (view.name !== 'home' && view.id === id) view = { name: 'home' };
+  render(); return true;
+}
+
 // ---- Getting a project onto the phone ----
 
 async function importBuffer(buffer: ArrayBuffer) {
@@ -68,7 +150,7 @@ async function importBuffer(buffer: ArrayBuffer) {
     const backup = await readBackup(buffer);
     if (!backup.project.renders.length) throw new Error('This project has no audio yet. Press Play in Script Glow on your computer to make it, then back it up again.');
     const previous = projects.find(item => item.project.id === backup.project.id);
-    await saveBackup(backup, previous);
+    await saveBackup(backup, previous, phone.defaults);
     projects = await listProjects();
     view = { name: 'project', id: backup.project.id };
     toast(previous ? `${backup.project.preferences.name} updated.` : `${backup.project.preferences.name} added.`);
@@ -138,8 +220,14 @@ async function warmUp() {
   }
 }
 
+function stopCountdown() { clearInterval(countTimer); countLeft = 0; }
+function countdown(go: () => void) {
+  countLeft = phone.countdown; tick();
+  countTimer = setInterval(() => { countLeft -= 1; if (countLeft > 0) { tick(); return; } stopCountdown(); go(); }, 1000);
+}
+
 function leaveScene() {
-  audio.pause(); stopListening(); releaseMicrophone();
+  stopCountdown(); audio.pause(); stopListening(); releaseMicrophone();
   if (audioUrl) URL.revokeObjectURL(audioUrl);
   audio.removeAttribute('src'); audio.load();
   audioUrl = ''; loadedMode = null; micFailed = false; waitingFor = ''; resumedLine = ''; listening = false; activeLine = ''; revealed.clear(); track = undefined;
@@ -178,7 +266,7 @@ audio.addEventListener('timeupdate', () => {
   }
   tick();
 });
-for (const event of ['play', 'pause', 'ended']) audio.addEventListener(event, () => { keepAwake(!audio.paused || !!waitingFor); tick(); });
+for (const event of ['play', 'pause', 'ended']) audio.addEventListener(event, () => { keepAwake(phone.awake && (!audio.paused || !!waitingFor)); tick(); });
 
 // The cheap update on every time step: no re-render, so the script does not jump under a finger.
 function tick() {
@@ -190,7 +278,8 @@ function tick() {
   if (seek && document.activeElement !== seek) seek.value = String(audio.currentTime);
   app.querySelector('#elapsed')!.textContent = time(audio.currentTime);
   if (status) {
-    const [title, detail] = waitingFor
+    const [title, detail] = countLeft ? [`Starting in ${countLeft}`, 'Get ready. Tap to cancel.']
+      : waitingFor
       ? ['Your line.', listening ? 'Take your time. It goes on when you stop.' : 'Say it, then tap Continue.']
       : audio.paused ? ['Paused', `${track.cues.length} lines · ${time(track.duration)}`]
       : cue ? (prefs().mode === 'practice' && mine(cue.character) ? ['Your line.', 'Silence here is yours.'] : [`${pretty(cue.character)} is speaking`, prefs().mode === 'practice' ? 'Your lines stay silent' : 'Every line is voiced, yours too'])
@@ -198,9 +287,9 @@ function tick() {
     status.innerHTML = `<span class="status-icon ${waitingFor ? 'waiting' : ''}">${icon(waitingFor ? 'mic' : 'next', 18)}</span><span><strong>${esc(title)}</strong><small>${esc(detail)}</small></span>`;
   }
   if (play) {
-    play.innerHTML = waitingFor ? '<span>Continue</span>' : icon(audio.paused ? 'play' : 'pause', 26);
+    play.innerHTML = waitingFor ? '<span>Continue</span>' : countLeft ? `<span>${countLeft}</span>` : icon(audio.paused ? 'play' : 'pause', 26);
     play.classList.toggle('continue', !!waitingFor);
-    play.setAttribute('aria-label', waitingFor ? 'Continue after my line' : audio.paused ? 'Play' : 'Pause');
+    play.setAttribute('aria-label', waitingFor ? 'Continue after my line' : countLeft ? 'Cancel the countdown' : audio.paused ? 'Play' : 'Pause');
   }
   const line = cue?.lineId ?? '';
   if (line !== activeLine) {
@@ -234,7 +323,7 @@ function homeView() {
       <span>${p.role ? `You play <b>${esc(p.role)}</b> · ` : ''}${sceneTracks(project).length} ${sceneTracks(project).length === 1 ? 'scene' : 'scenes'}</span>
       <small>Sent ${new Date(importedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</small>
     </button>`).join('');
-  return `<header class="home-bar"><div class="brand">script<span>glow</span></div></header>
+  return `<header class="home-bar"><div class="brand">script<span>glow</span></div><button class="icon" data-action="app-settings" aria-label="Settings">${icon('gear')}</button></header>
     <main class="home">
       ${projects.length ? `<h2 class="label">YOUR SCENES</h2><div class="cards">${cards}</div>` : `
       <section class="empty"><h1>Rehearse anywhere.</h1><p>Make the scene and its voices on your computer. Send it here. Run lines on the train.</p>
@@ -250,7 +339,7 @@ function projectView(id: string) {
   const entry = projects.find(item => item.project.id === id);
   if (!entry) { view = { name: 'home' }; return homeView(); }
   const tracks = sceneTracks(entry.project);
-  return `<header class="bar"><button class="icon" data-action="home" aria-label="Back to projects">${icon('back')}</button><div class="bar-title"><strong>${esc(entry.prefs.name)}</strong><small>${entry.prefs.role ? `You play ${esc(entry.prefs.role)}` : 'No role chosen'}</small></div><span class="icon"></span></header>
+  return `<header class="bar"><button class="icon" data-action="home" aria-label="Back to projects">${icon('back')}</button><div class="bar-title"><strong>${esc(entry.prefs.name)}</strong><small>${entry.prefs.role ? `You play ${esc(entry.prefs.role)}` : 'No role chosen'}</small></div><button class="icon" data-action="app-settings" aria-label="Settings">${icon('gear')}</button></header>
     <main class="home">
       <h2 class="label">SCENES WITH AUDIO</h2>
       <div class="cards">${tracks.map(item => `<button class="card" data-action="scene" data-id="${esc(id)}" data-key="${esc(item.key)}"><strong>${esc(item.title)}</strong><span>${item.cues.length} lines · ${time(item.duration)}</span></button>`).join('')}</div>
@@ -264,7 +353,7 @@ function sceneView() {
   const practice = p.mode === 'practice';
   const lines = track!.lines.map(line => {
     if (line.format === 'heading') return `<p class="heading">${esc(line.text)}</p>`;
-    if (line.kind === 'direction') return `<p class="direction">${esc(line.text)}</p>`;
+    if (line.kind === 'direction') return phone.directions ? `<p class="direction">${esc(line.text)}</p>` : '';
     const own = mine(line.character);
     const hidden = own && practice && p.hide && !revealed.has(line.id);
     const text = hidden ? (p.hint ? firstLetters(line.text) : 'Your line. Tap to peek.') : line.text;
@@ -296,16 +385,19 @@ app.addEventListener('click', async event => {
   if (action === 'sample') { await importBuffer(await (await fetch(target.dataset.url!)).arrayBuffer()); return; }
   if (action === 'project') { if (view.name === 'scene') leaveScene(); view = { name: 'project', id }; render(); return; }
   if (action === 'scene') { openScene(id, key); return; }
-  if (action === 'remove') {
-    if (!confirm('Remove this project and its audio from the phone? Your computer keeps its copy.')) return;
-    await removeProject(id); projects = await listProjects(); view = { name: 'home' }; render(); return;
-  }
+  if (action === 'app-settings') { openPhone(); return; }
+  if (action === 'remove') { await removeFromPhone(id); return; }
   if (!saved || !track) return;
   const p = prefs();
   if (action === 'play') {
     if (waitingFor) releaseWait();
-    else if (loadedMode !== p.mode) { await warmUp(); void load(audio.currentTime, true); }
-    else if (audio.paused) { await warmUp(); void audio.play().catch(() => toast('Tap Play to start.')); }
+    else if (countLeft) { stopCountdown(); tick(); }
+    else if (loadedMode !== p.mode || audio.paused) {
+      // The microphone opens before the countdown, so the room is measured while the actor gets ready.
+      await warmUp();
+      const go = () => { if (loadedMode !== prefs().mode) void load(audio.currentTime, true); else void audio.play().catch(() => toast('Tap Play to start.')); };
+      if (phone.countdown) countdown(go); else go();
+    }
     else audio.pause();
   }
   if (action === 'prev' || action === 'next') step(action === 'next' ? 1 : -1);
@@ -346,6 +438,11 @@ function fillSettings() {
   settings.querySelector<HTMLSelectElement>('[name="holdMs"]')!.value = String(p.holdMs);
   settings.querySelector<HTMLLabelElement>('#hold-row')!.hidden = !(p.wait && p.autoContinue);
 }
+settings.addEventListener('click', event => {
+  const target = (event.target as HTMLElement).closest<HTMLElement>('[data-sheet]');
+  if (target?.dataset.sheet === 'phone') { settings.close(); openPhone(); }
+  if (target?.dataset.sheet === 'defaults' && saved) { phone.defaults = pick(prefs()); applyPhone(); toast('New projects will start with these settings.'); }
+});
 settings.addEventListener('change', event => {
   const target = event.target as HTMLInputElement;
   const p = prefs();
@@ -359,10 +456,11 @@ settings.addEventListener('change', event => {
   else if (target.value === 'listen') void warmUp();
   fillSettings(); persist(); render();
 });
-settings.addEventListener('click', event => { if (event.target === settings || (event.target as HTMLElement).closest('[data-close]')) settings.close(); });
+for (const sheet of [settings, appSettings]) sheet.addEventListener('click', event => { if (event.target === sheet || (event.target as HTMLElement).closest('[data-close]')) sheet.close(); });
 
 // ---- Start ----
 
+applyPhone();
 void navigator.storage?.persist?.();
 void App.addListener('appUrlOpen', ({ url }) => void openUrl(url));
 projects = await listProjects();
