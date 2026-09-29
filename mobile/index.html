@@ -26,7 +26,38 @@
     <div class="group">
       <label class="row"><span><strong>Partner speed</strong><small>My silent lines always run at 1x</small></span><select name="rate"><option value="0.75">0.75x</option><option value="1">1x</option><option value="1.25">1.25x</option><option value="1.5">1.5x</option></select></label>
     </div>
-    <p class="hint">Voices, cast and script edits happen on your computer. Send the project again to update it here. <a href="https://mariano215.github.io/script-glow/privacy.html" target="_blank" rel="noopener">Privacy policy</a></p>
+    <div class="group">
+      <button class="row" data-sheet="defaults"><span><strong>Use these for new projects</strong><small>New projects start with this setup</small></span></button>
+      <button class="row" data-sheet="phone"><span><strong>Text size, colors and more</strong><small>Settings for every project</small></span></button>
+    </div>
+    <p class="hint">Voices, cast and script edits happen on your computer. Send the project again to update it here.</p>
+  </dialog>
+  <dialog id="app-settings" class="sheet" aria-labelledby="app-settings-title">
+    <div class="grip"></div>
+    <div class="sheet-head"><h2 id="app-settings-title">Settings</h2><button class="done" data-close>Done</button></div>
+    <fieldset class="group">
+      <legend class="label">SCRIPT</legend>
+      <label class="row"><span><strong>Text size</strong></span><select name="size"><option value="15">Small</option><option value="17">Medium</option><option value="20">Large</option><option value="24">Extra large</option></select></label>
+      <label class="row"><span><strong>Appearance</strong></span><select name="theme"><option value="system">Match phone</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+      <label class="row"><span><strong>Show stage directions</strong><small>Off shows only the dialogue</small></span><input type="checkbox" name="directions" class="switch"></label>
+      <label class="row"><span><strong>My lines</strong><small>Marks every line of the role I play</small></span><input type="color" name="mine"></label>
+      <label class="row"><span><strong>Line playing now</strong><small>Follows the scene as it plays</small></span><input type="color" name="spoken"></label>
+      <button class="row reset" data-reset>Reset colors</button>
+    </fieldset>
+    <fieldset class="group">
+      <legend class="label">PLAYING</legend>
+      <label class="row"><span><strong>Keep the screen on</strong><small>While a scene plays or waits for me</small></span><input type="checkbox" name="awake" class="switch"></label>
+      <label class="row"><span><strong>Countdown</strong><small>Before Play starts the scene</small></span><select name="countdown"><option value="0">Off</option><option value="3">3 s</option><option value="5">5 s</option></select></label>
+    </fieldset>
+    <fieldset class="group">
+      <legend class="label">NEW PROJECTS</legend>
+      <div class="row"><span><strong>Rehearsal setup</strong><small id="defaults-note"></small></span><button class="small-remove" data-forget hidden>Clear</button></div>
+    </fieldset>
+    <fieldset class="group">
+      <legend class="label">STORAGE</legend>
+      <div id="storage"></div>
+    </fieldset>
+    <p class="hint">These apply to every project on this phone. To save a rehearsal setup for new projects, open a scene, tap the sliders, then tap <b>Use these for new projects</b>. Voices, cast and script edits happen on your computer. <a href="https://mariano215.github.io/script-glow/privacy.html" target="_blank" rel="noopener">Privacy policy</a></p>
   </dialog>
   <script type="module" src="/src/main.ts"></script>
 </body>

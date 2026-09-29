@@ -8,6 +8,8 @@ A rehearsal-only phone app. The Mac does the script, the cast and the voices. Th
 2. AirDrop it to the phone, or save it to Files. Tap it and iOS opens it in Script Glow. **Add from Files** in the app does the same.
 3. Send it again to update it. The phone keeps its own rehearsal settings (mode, hint, speed, wait) and replaces the rest.
 
+The gear on the home screen opens Settings for every project on the phone: highlight colors, text size, appearance, stage directions, keep the screen on, a countdown, a rehearsal setup for new projects, and storage. They are kept in the web view's localStorage and never go back to the Mac.
+
 Only scenes that have audio on the Mac come across. Nothing goes back to the Mac.
 
 ## What it reuses

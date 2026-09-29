@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Phone app: your lines are highlighted again, in colors you pick.** A gear on the home screen opens Settings for every project on the phone: colors for your lines and for the line playing now, text size, light or dark, stage directions on or off, keep the screen on, a countdown before Play, a saved rehearsal setup for new projects, and how much space each project uses.
 - **Run with Docker.** `docker compose up -d` installs the app, the Chatterbox voice server and the stock voices, with no graphics card needed. Whisper and Ollama with Gemma 4 are optional. An override file adds NVIDIA support. See "Run with Docker" in the README.
 - **Changing one character's voice no longer marks other scenes as needing new audio.** A scene's audio now depends only on the voices heard in it.
 - **Saved audio uses a short key.** Each render was saved under its whole script text, up to 1.2 MB for a full script, which pushed older audio out of a project. Audio made before this change still plays.
