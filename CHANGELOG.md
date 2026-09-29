@@ -3,6 +3,10 @@
 ## Unreleased
 
 - **Phone app: your lines are highlighted again, in colors you pick.** A gear on the home screen opens Settings for every project on the phone: colors for your lines and for the line playing now, text size, light or dark, stage directions on or off, keep the screen on, a countdown before Play, a saved rehearsal setup for new projects, and how much space each project uses.
+
+## 0.5.1 (2026-09-27)
+
+- **The screen stays awake while a scene plays.** It no longer dims or locks while the audio plays or while the scene waits for your line. It can sleep again once you pause, the scene ends or you leave it.
 - **Run with Docker.** `docker compose up -d` installs the app, the Chatterbox voice server and the stock voices, with no graphics card needed. Whisper and Ollama with Gemma 4 are optional. An override file adds NVIDIA support. See "Run with Docker" in the README.
 - **Changing one character's voice no longer marks other scenes as needing new audio.** A scene's audio now depends only on the voices heard in it.
 - **Saved audio uses a short key.** Each render was saved under its whole script text, up to 1.2 MB for a full script, which pushed older audio out of a project. Audio made before this change still plays.
@@ -12,12 +16,9 @@
 - Files left half written by a crash are removed the next time the app starts.
 - The desktop app's update check is now listed in the privacy notes. The security notes also say that other programs on the computer can reach the app.
 - Clearer messages for a paid service that is out of credit or rate limited, and for a bad `PORT` or settings file at start.
-
 - **See who is in the scene.** A row under the scene title lists every character who speaks in the scene, the picked scenes, or the full script, in the order they first speak. Your role is marked.
 - MP3 downloads no longer leave a partial file behind when FFmpeg fails, and at most two are made at a time.
-
 - **Any voice for any character.** The voice list no longer blocks voices another character already uses, so a cast larger than the voice list can still be set by hand. Your own voice stays with your chosen role. When no unused voice of the right type is left, automatic casting shares one of that type instead of switching to an unlabeled voice.
-
 - **Run several scenes as one.** Click a scene, then Shift-click another to pick every scene between them. Cmd-click (Ctrl on Windows and Linux) adds or removes one scene. The picked scenes play in script order, and **Make audio** makes one track for all of them.
 - **Download as MP3.** With FFmpeg installed, a **WAV** or **MP3** choice sits next to the download links. The choice is kept in this browser.
 
